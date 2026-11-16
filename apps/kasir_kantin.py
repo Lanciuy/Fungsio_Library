@@ -15,6 +15,7 @@ from fungsio_lib import (
     update_by_id,
 )
 
+# Aturan diskon otomatis 10% untuk belanja >= Rp50.000 dan PPN 11%.
 DISCOUNT_THRESHOLD = 50000.0
 DISCOUNT_RATE = 0.10
 TAX_RATE = 0.11
@@ -35,20 +36,18 @@ def add_to_cart(
     id_menu: str,
     qty: int,
 ) -> list[dict[str, Any]]:
-    """Add a menu item to cart or increment its quantity if already present.
-
-    Using filter_by_field + update_by_id avoids duplicate line items for the
-    same menu ID while preserving pure immutability of the cart collection.
-    """
+    """Tambah item menu ke keranjang atau akomodasi kenaikan qty jika sudah ada."""
     if qty <= 0:
         raise ValueError("Jumlah (qty) harus lebih dari 0")
 
+    # Pakai filter_by_field untuk memastikan ID menu valid sebelum masuk keranjang.
     matched_menu = filter_by_field(menu, "id_menu", id_menu)
     if not matched_menu:
         raise ValueError(f"Menu dengan ID '{id_menu}' tidak ditemukan")
 
     menu_item = matched_menu[0]
     existing_cart_item = filter_by_field(cart, "id_menu", id_menu)
+    # Jika item sudah ada di keranjang, perbarui qty via update_by_id agar tidak duplikat.
     if existing_cart_item:
         new_qty = int(existing_cart_item[0]["qty"]) + qty
         return update_by_id(cart, "id_menu", id_menu, {"qty": new_qty})
@@ -60,6 +59,7 @@ def add_to_cart(
         "harga": menu_item["harga"],
         "qty": qty,
     }
+    # Item baru ditambahkan lewat add_record secara immutable.
     return add_record(cart, new_entry)
 
 
@@ -68,14 +68,15 @@ def update_cart_quantity(
     id_menu: str,
     new_qty: int,
 ) -> list[dict[str, Any]]:
-    """Update item quantity or remove item entirely when quantity reaches zero."""
+    """Ubah qty item di keranjang, atau hapus otomatis via remove_by_id jika qty <= 0."""
     if new_qty <= 0:
         return remove_by_id(cart, "id_menu", id_menu)
     return update_by_id(cart, "id_menu", id_menu, {"qty": new_qty})
 
 
 def compute_checkout(cart: list[dict[str, Any]]) -> dict[str, Any]:
-    """Compute itemized subtotals, discount, tax, and final payable total."""
+    """Hitung subtotal per item, diskon, PPN, dan total bayar akhir dari keranjang."""
+    # Hitung subtotal tiap item memakai transform_records.
     cart_with_subtotals = transform_records(
         cart,
         lambda item: {
@@ -83,9 +84,12 @@ def compute_checkout(cart: list[dict[str, Any]]) -> dict[str, Any]:
             "subtotal": float(item["harga"]) * int(item["qty"]),
         },
     )
+    # Urutkan item keranjang dari subtotal terbesar memakai sort_records.
     ordered_items = sort_records(cart_with_subtotals, "subtotal", descending=True)
+    # Jumlahkan total belanja kotor dan total kuantitas via sum_by_field.
     gross_total = sum_by_field(ordered_items, "subtotal")
     total_qty = int(sum_by_field(ordered_items, "qty"))
+
     discount = gross_total * DISCOUNT_RATE if gross_total >= DISCOUNT_THRESHOLD else 0.0
     after_discount = gross_total - discount
     tax = after_discount * TAX_RATE
@@ -101,6 +105,7 @@ def compute_checkout(cart: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _print_menu_table(menu: list[dict[str, Any]], title: str = "Daftar Menu Kantin") -> None:
+    """Tampilkan daftar menu kantin dalam format tabel terminal."""
     print(f"\n[{title}]")
     if not menu:
         print("  (Menu kosong)")
@@ -114,6 +119,7 @@ def _print_menu_table(menu: list[dict[str, Any]], title: str = "Daftar Menu Kant
 
 
 def _print_receipt(checkout: dict[str, Any]) -> None:
+    """Cetak struk rincian belanja, potongan diskon, PPN, dan grand total."""
     print("\n[Struk Total Belanja]")
     if not checkout["items"]:
         print("  Keranjang masih kosong.")
@@ -134,12 +140,13 @@ def _print_receipt(checkout: dict[str, Any]) -> None:
 
 
 def run_demo() -> dict[str, Any]:
-    """Execute an end-to-end automated walkthrough of the Canteen Cashier app."""
+    """Jalankan skenario demo otomatis App 1 untuk verifikasi dan pengujian."""
     print_header("APP 1: KASIR KANTIN (Menu, Keranjang, Total Belanja)")
     menu = INITIAL_MENU
     sorted_menu = sort_records(menu, "harga", descending=False)
     _print_menu_table(sorted_menu, "Menu Urut Harga Termurah")
 
+    # Statistik harga menu (rata-rata, termurah, termahal) memakai calculate_summary_stats.
     menu_stats = calculate_summary_stats(menu, "harga")
     print(
         f"\n  Statistik Harga Menu -> Jumlah: {int(menu_stats['count'])}, "
@@ -153,6 +160,7 @@ def run_demo() -> dict[str, Any]:
     search_ayam = search_by_keyword(menu, "nama", "ayam")
     _print_menu_table(search_ayam, "Pencarian Kata Kunci: 'ayam'")
 
+    # Simulasi transaksi keranjang: tambah item, ubah qty, lalu hapus M06.
     cart: list[dict[str, Any]] = []
     cart = add_to_cart(menu, cart, "M01", 2)
     cart = add_to_cart(menu, cart, "M03", 1)
@@ -172,7 +180,7 @@ def run_demo() -> dict[str, Any]:
 
 
 def run_cli() -> None:
-    """Launch interactive terminal UI for the Canteen Cashier application."""
+    """Jalankan antarmuka terminal interaktif untuk Kasir Kantin."""
     state: dict[str, Any] = {
         "menu": list(INITIAL_MENU),
         "cart": [],

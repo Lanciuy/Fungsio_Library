@@ -15,6 +15,7 @@ from apps import (
     prompt_int,
 )
 
+# Daftar aplikasi yang tampil di portal CLI utama beserta modul pengelolanya.
 APP_REGISTRY = [
     ("kasir_kantin", "Kasir Kantin (Menu, Keranjang, Total Belanja)", kasir_kantin),
     ("presensi_kelas", "Presensi Kelas (Kehadiran & Rekap Mahasiswa)", presensi_kelas),
@@ -25,15 +26,12 @@ APP_REGISTRY = [
 
 
 def inspect_library_usage() -> dict[str, set[str]]:
-    """Inspect AST call sites across apps/ to verify library function usage counts.
-
-    Computing the usage matrix via AST parsing ensures the displayed audit
-    table reflects actual static function calls rather than hardcoded claims.
-    """
+    """Audit pemanggilan 10 fungsi fungsio_lib di tiap file apps/ lewat AST."""
     apps_dir = Path(__file__).resolve().parent / "apps"
     lib_functions = set(fungsio_lib.__all__)
     usage: dict[str, set[str]] = {fn_name: set() for fn_name in lib_functions}
 
+    # Memindai AST secara statis memastikan tabel matriks selalu sesuai kode aktual.
     for module_key, _, _ in APP_REGISTRY:
         source_path = apps_dir / f"{module_key}.py"
         tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
@@ -50,7 +48,7 @@ def inspect_library_usage() -> dict[str, set[str]]:
 
 
 def print_usage_matrix() -> None:
-    """Display the 10x5 function usage verification table across all five apps."""
+    """Cetak tabel verifikasi pemakaian 10 fungsi library di 5 aplikasi."""
     print_header("VERIFIKASI MATRIKS PEMAKAIAN 10 FUNGSI DI 5 APLIKASI")
     usage = inspect_library_usage()
     short_headers = ["Kasir", "Presensi", "Perpus", "Keuangan", "Nilai"]
@@ -67,14 +65,14 @@ def print_usage_matrix() -> None:
 
 
 def run_all_demos() -> None:
-    """Execute automated demonstrations for all 5 applications and print usage matrix."""
+    """Jalankan demo otomatis ke-5 aplikasi lalu tampilkan matriks pemakaian fungsi."""
     for _, _, module in APP_REGISTRY:
         module.run_demo()
     print_usage_matrix()
 
 
 def run_interactive_launcher() -> None:
-    """Display the top-level CLI menu to choose any of the 5 apps."""
+    """Tampilkan portal menu interaktif untuk memilih satu dari 5 aplikasi CLI."""
     while True:
         print_header("PORTAL UTAMA: 1 LIBRARY (10 FUNGSI) & 5 APLIKASI CLI")
         for idx, (_, label, _) in enumerate(APP_REGISTRY, start=1):
@@ -90,7 +88,7 @@ def run_interactive_launcher() -> None:
 
 
 def main() -> None:
-    """Parse CLI arguments and dispatch either demo mode or interactive launcher."""
+    """Entrypoint CLI: jalankan --demo untuk demo otomatis atau menu interaktif."""
     parser = argparse.ArgumentParser(
         description="Launcher untuk Library Fungsional (10 Fungsi) & 5 Aplikasi CLI"
     )

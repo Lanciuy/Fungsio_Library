@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# Ekspor seluruh 10 pure function agar bisa diimpor langsung lewat `from fungsio_lib import ...`.
 from fungsio_lib.core import (
     add_record,
     calculate_summary_stats,

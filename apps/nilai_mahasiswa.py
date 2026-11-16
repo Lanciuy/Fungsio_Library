@@ -14,6 +14,7 @@ from fungsio_lib import (
     update_by_id,
 )
 
+# Bobot nilai akhir: Tugas 25%, Kuis 15%, UTS 30%, UAS 30%.
 WEIGHT_TUGAS = 0.25
 WEIGHT_KUIS = 0.15
 WEIGHT_UTS = 0.30
@@ -29,12 +30,14 @@ INITIAL_STUDENTS: list[dict[str, Any]] = [
 
 
 def _validate_score(score: float, label: str) -> float:
+    """Pastikan nilai komponen berada pada rentang 0 sampai 100."""
     if score < 0.0 or score > 100.0:
         raise ValueError(f"Nilai {label} harus berada di rentang 0 - 100")
     return float(score)
 
 
 def _determine_grade(final_score: float) -> str:
+    """Konversi nilai akhir numerik ke huruf mutu (A-E)."""
     if final_score >= 85.0:
         return "A"
     if final_score >= 75.0:
@@ -55,7 +58,7 @@ def add_student_scores(
     uts: float,
     uas: float,
 ) -> list[dict[str, Any]]:
-    """Append a validated student component-score record immutably."""
+    """Tambah data nilai mahasiswa baru setelah validasi duplikasi NIM."""
     if filter_by_field(students, "nim", nim.strip()):
         raise ValueError(f"Mahasiswa dengan NIM '{nim}' sudah terdaftar")
 
@@ -75,7 +78,7 @@ def revise_student_scores(
     nim: str,
     updates: dict[str, float],
 ) -> list[dict[str, Any]]:
-    """Update specific component scores for a student by NIM."""
+    """Revisi satu atau lebih komponen nilai mahasiswa berdasarkan NIM."""
     if not filter_by_field(students, "nim", nim.strip()):
         raise ValueError(f"Mahasiswa dengan NIM '{nim}' tidak ditemukan")
     validated = {key: _validate_score(val, key.upper()) for key, val in updates.items()}
@@ -83,7 +86,8 @@ def revise_student_scores(
 
 
 def evaluate_class_grades(students: list[dict[str, Any]]) -> dict[str, Any]:
-    """Compute weighted final scores, grades, rankings, and class statistics."""
+    """Hitung nilai akhir berbobot, huruf mutu, peringkat kelas, dan statistik nilai."""
+    # Hitung nilai akhir berbobot tiap mahasiswa memakai transform_records.
     computed_scores = transform_records(
         students,
         lambda s: {
@@ -97,6 +101,7 @@ def evaluate_class_grades(students: list[dict[str, Any]]) -> dict[str, Any]:
             ),
         },
     )
+    # Tentukan grade dan status kelulusan (lulus jika nilai_akhir >= 60).
     graded_students = transform_records(
         computed_scores,
         lambda s: {
@@ -105,6 +110,7 @@ def evaluate_class_grades(students: list[dict[str, Any]]) -> dict[str, Any]:
             "status_lulus": "Lulus" if float(s["nilai_akhir"]) >= 60.0 else "Mengulang",
         },
     )
+    # Urutkan dari nilai akhir tertinggi sekaligus beri peringkat (rank 1..N) via sort_records.
     rankings = sort_records(graded_students, "nilai_akhir", descending=True)
     passed_students = filter_by_field(rankings, "status_lulus", "Lulus")
     grade_distribution = group_by_field(rankings, "grade")
@@ -119,6 +125,7 @@ def evaluate_class_grades(students: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _print_rankings(students: list[dict[str, Any]], title: str = "Peringkat Nilai Akhir Mahasiswa") -> None:
+    """Cetak tabel komponen nilai, nilai akhir, grade, dan peringkat mahasiswa."""
     print(f"\n[{title}]")
     if not students:
         print("  (Data mahasiswa kosong)")
@@ -138,10 +145,11 @@ def _print_rankings(students: list[dict[str, Any]], title: str = "Peringkat Nila
 
 
 def run_demo() -> dict[str, Any]:
-    """Execute an end-to-end automated walkthrough of the Student Grades app."""
+    """Jalankan skenario demo otomatis App 5 untuk verifikasi dan pengujian."""
     print_header("APP 5: NILAI MAHASISWA (Komponen Nilai, Nilai Akhir, Peringkat)")
     students = INITIAL_STUDENTS
     students = add_student_scores(students, "230106", "Fajar Nugroho", 88, 84, 82, 86)
+    # Revisi nilai UAS mahasiswa 230102 agar lulus setelah perbaikan.
     students = revise_student_scores(students, "230102", {"uas": 68.0})
 
     evaluation = evaluate_class_grades(students)
@@ -167,7 +175,7 @@ def run_demo() -> dict[str, Any]:
 
 
 def run_cli() -> None:
-    """Launch interactive terminal UI for Student Grade calculation and ranking."""
+    """Jalankan antarmuka terminal interaktif untuk Nilai Mahasiswa."""
     state: dict[str, Any] = {"students": list(INITIAL_STUDENTS)}
 
     def show_rankings() -> bool:

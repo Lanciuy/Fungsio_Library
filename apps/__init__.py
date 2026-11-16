@@ -4,11 +4,7 @@ from typing import Callable
 
 
 def format_idr(amount: float) -> str:
-    """Format a numeric value into Indonesian Rupiah currency string.
-
-    Grouping thousands with dots matches local Indonesian financial display
-    conventions across canteen, library fine, and personal finance apps.
-    """
+    """Format angka ke string Rupiah dengan pemisah ribuan titik (misal Rp15.000)."""
     rounded = round(amount)
     sign = "-" if rounded < 0 else ""
     formatted = f"{abs(rounded):,}".replace(",", ".")
@@ -16,7 +12,7 @@ def format_idr(amount: float) -> str:
 
 
 def print_header(title: str) -> None:
-    """Render a consistent section banner for terminal readability."""
+    """Cetak banner judul yang seragam untuk setiap layar CLI."""
     border = "=" * 64
     print(f"\n{border}")
     print(f"  {title}")
@@ -24,7 +20,7 @@ def print_header(title: str) -> None:
 
 
 def prompt_non_empty(label: str) -> str:
-    """Prompt the user until a non-empty string is entered."""
+    """Minta input teks dan ulangi hingga user mengisi minimal satu karakter."""
     while True:
         value = input(f"{label}: ").strip()
         if value:
@@ -33,7 +29,7 @@ def prompt_non_empty(label: str) -> str:
 
 
 def prompt_int(label: str, min_value: int | None = None, max_value: int | None = None) -> int:
-    """Prompt the user for an integer within optional inclusive bounds."""
+    """Minta input bilangan bulat dengan validasi batas bawah/atas opsional."""
     while True:
         raw = input(f"{label}: ").strip()
         try:
@@ -51,7 +47,7 @@ def prompt_int(label: str, min_value: int | None = None, max_value: int | None =
 
 
 def prompt_float(label: str, min_value: float | None = None, max_value: float | None = None) -> float:
-    """Prompt the user for a floating-point number within optional bounds."""
+    """Minta input angka desimal dengan validasi batas bawah/atas opsional."""
     while True:
         raw = input(f"{label}: ").strip()
         try:
@@ -69,11 +65,7 @@ def prompt_float(label: str, min_value: float | None = None, max_value: float | 
 
 
 def run_menu_loop(title: str, options: list[tuple[str, Callable[[], bool]]]) -> None:
-    """Drive a reusable CLI menu loop until a handler returns False to exit.
-
-    Centralizing menu dispatch eliminates boilerplate loops and bounds checking
-    across all five interactive applications.
-    """
+    """Loop menu CLI generik agar tiap aplikasi tidak mengulang logika navigasi."""
     while True:
         print_header(title)
         for idx, (label, _) in enumerate(options, start=1):

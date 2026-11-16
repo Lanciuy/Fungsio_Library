@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps import format_idr, print_header, prompt_float, prompt_int, prompt_non_empty, run_menu_loop
+from apps import format_idr, print_header, prompt_float, prompt_non_empty, run_menu_loop
 from fungsio_lib import (
     add_record,
     calculate_summary_stats,
@@ -25,6 +25,7 @@ INITIAL_TRANSACTIONS: list[dict[str, Any]] = [
 
 
 def _normalize_type(raw_type: str) -> str:
+    """Validasi dan seragamkan tipe transaksi (Pemasukan atau Pengeluaran)."""
     clean = raw_type.strip().capitalize()
     if clean not in {"Pemasukan", "Pengeluaran"}:
         raise ValueError("Tipe transaksi harus 'Pemasukan' atau 'Pengeluaran'")
@@ -39,7 +40,7 @@ def add_transaction(
     keterangan: str,
     nominal: float,
 ) -> list[dict[str, Any]]:
-    """Append a validated income or expense record immutably."""
+    """Tambah transaksi pemasukan/pengeluaran baru secara immutable via add_record."""
     if nominal <= 0:
         raise ValueError("Nominal harus lebih besar dari 0")
     clean_type = _normalize_type(tipe)
@@ -56,7 +57,8 @@ def add_transaction(
 
 
 def analyze_finances(transactions: list[dict[str, Any]]) -> dict[str, Any]:
-    """Compute signed cashflows, total income/expense, balance, and category breakdown."""
+    """Hitung arus kas bertanda, saldo bersih, rekap kategori, dan statistik pengeluaran."""
+    # Ubah nominal jadi bertanda (+ masuk, - keluar) lewat transform_records agar saldo mudah dijumlah.
     signed_transactions = transform_records(
         transactions,
         lambda trx: {
@@ -71,6 +73,7 @@ def analyze_finances(transactions: list[dict[str, Any]]) -> dict[str, Any]:
     total_pengeluaran = sum_by_field(expenses, "nominal")
     saldo_bersih = sum_by_field(signed_transactions, "arus_kas")
 
+    # Kelompokkan transaksi per kategori lewat group_by_field lalu jumlahkan arus kas tiap kategori.
     grouped_categories = group_by_field(signed_transactions, "kategori")
     category_totals = [
         {
@@ -82,6 +85,7 @@ def analyze_finances(transactions: list[dict[str, Any]]) -> dict[str, Any]:
         for category, items in grouped_categories.items()
     ]
 
+    # Urutkan pengeluaran terbesar memakai sort_records dan hitung statistiknya.
     largest_expenses = sort_records(expenses, "nominal", descending=True)
     expense_stats = calculate_summary_stats(expenses, "nominal")
 
@@ -99,6 +103,7 @@ def analyze_finances(transactions: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _print_transactions(transactions: list[dict[str, Any]], title: str = "Daftar Transaksi") -> None:
+    """Cetak daftar transaksi pemasukan dan pengeluaran."""
     print(f"\n[{title}]")
     if not transactions:
         print("  (Belum ada transaksi)")
@@ -113,6 +118,7 @@ def _print_transactions(transactions: list[dict[str, Any]], title: str = "Daftar
 
 
 def _print_financial_report(report: dict[str, Any]) -> None:
+    """Cetak ringkasan saldo bersih, rekap kategori, dan 3 pengeluaran terbesar."""
     print("\n[Ringkasan Keuangan Pribadi]")
     print(f"  Total Pemasukan   : {format_idr(report['total_pemasukan'])}")
     print(f"  Total Pengeluaran : {format_idr(report['total_pengeluaran'])}")
@@ -140,11 +146,12 @@ def _print_financial_report(report: dict[str, Any]) -> None:
 
 
 def run_demo() -> dict[str, Any]:
-    """Execute an end-to-end automated walkthrough of the Personal Finance app."""
+    """Jalankan skenario demo otomatis App 4 untuk verifikasi dan pengujian."""
     print_header("APP 4: KEUANGAN PRIBADI (Pemasukan, Pengeluaran, Kategori)")
     transactions = INITIAL_TRANSACTIONS
     transactions = add_transaction(transactions, "2026-11-07", "Pengeluaran", "Hiburan", "Nonton bioskop", 75000)
     transactions = add_transaction(transactions, "2026-11-08", "Pengeluaran", "Makan", "Traktir teman", 120000)
+    # Hapus transaksi T02 memakai remove_by_id.
     transactions = remove_by_id(transactions, "id_trx", "T02")
 
     report = analyze_finances(transactions)
@@ -154,7 +161,7 @@ def run_demo() -> dict[str, Any]:
 
 
 def run_cli() -> None:
-    """Launch interactive terminal UI for Personal Finance management."""
+    """Jalankan antarmuka terminal interaktif untuk Keuangan Pribadi."""
     state: dict[str, Any] = {"transactions": list(INITIAL_TRANSACTIONS)}
 
     def show_all() -> bool:

@@ -14,6 +14,7 @@ from fungsio_lib import (
     update_by_id,
 )
 
+# Bobot poin per status kehadiran dan ambang minimal kelayakan ikut UAS (75%).
 STATUS_POINTS: dict[str, float] = {
     "Hadir": 1.0,
     "Izin": 0.5,
@@ -39,6 +40,7 @@ INITIAL_LOGS: list[dict[str, Any]] = [
 
 
 def _normalize_status(raw_status: str) -> str:
+    """Validasi dan seragamkan penulisan status kehadiran."""
     formatted = raw_status.strip().capitalize()
     if formatted not in STATUS_POINTS:
         valid = ", ".join(STATUS_POINTS.keys())
@@ -53,7 +55,7 @@ def record_attendance(
     pertemuan: int,
     status: str,
 ) -> list[dict[str, Any]]:
-    """Append a validated attendance log entry immutably."""
+    """Catat entri presensi baru secara immutable via add_record."""
     clean_status = _normalize_status(status)
     next_id = f"P{len(logs) + 1:02d}"
     entry = {
@@ -67,12 +69,8 @@ def record_attendance(
 
 
 def build_student_recaps(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Aggregate attendance logs into per-student percentages and UAS eligibility.
-
-    Uses transform_records to attach point weights, group_by_field to partition
-    by NIM, sum_by_field for points, transform_records for eligibility labels,
-    and sort_records to rank students from highest attendance to lowest.
-    """
+    """Rekap log presensi per mahasiswa: hitung % hadir, kelayakan UAS, dan peringkat."""
+    # Beri bobot poin pada tiap log presensi lewat transform_records.
     weighted_logs = transform_records(
         logs,
         lambda item: {
@@ -80,6 +78,7 @@ def build_student_recaps(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "poin": STATUS_POINTS.get(item["status"], 0.0),
         },
     )
+    # Kelompokkan seluruh log berdasarkan NIM mahasiswa memakai group_by_field.
     grouped_by_nim = group_by_field(weighted_logs, "nim")
 
     raw_recaps: list[dict[str, Any]] = []
@@ -97,6 +96,7 @@ def build_student_recaps(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
 
+    # Hitung persentase kehadiran dan tentukan status kelayakan UAS (>= 75%).
     enriched_recaps = transform_records(
         raw_recaps,
         lambda rec: {
@@ -113,10 +113,12 @@ def build_student_recaps(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "kelayakan_uas": "Layak UAS" if rec["persentase"] >= MIN_UAS_PERCENTAGE else "Tidak Layak",
         },
     )
+    # Urutkan mahasiswa dari persentase kehadiran tertinggi via sort_records.
     return sort_records(final_recaps, "persentase", descending=True)
 
 
 def _print_logs(logs: list[dict[str, Any]], title: str = "Log Presensi Kelas") -> None:
+    """Cetak daftar log presensi mentah per pertemuan."""
     print(f"\n[{title}]")
     if not logs:
         print("  (Belum ada data log presensi)")
@@ -131,6 +133,7 @@ def _print_logs(logs: list[dict[str, Any]], title: str = "Log Presensi Kelas") -
 
 
 def _print_recaps(recaps: list[dict[str, Any]], title: str = "Rekap Kehadiran per Mahasiswa") -> None:
+    """Cetak tabel rekap kehadiran, persentase, dan status kelayakan UAS."""
     print(f"\n[{title}]")
     if not recaps:
         print("  (Belum ada rekap mahasiswa)")
@@ -149,11 +152,12 @@ def _print_recaps(recaps: list[dict[str, Any]], title: str = "Rekap Kehadiran pe
 
 
 def run_demo() -> dict[str, Any]:
-    """Execute an end-to-end automated walkthrough of the Class Attendance app."""
+    """Jalankan skenario demo otomatis App 2 untuk verifikasi dan pengujian."""
     print_header("APP 2: PRESENSI KELAS (Kehadiran & Rekap per Mahasiswa)")
     logs = INITIAL_LOGS
     logs = record_attendance(logs, "230104", "Dewi Anggraini", 1, "Hadir")
     logs = record_attendance(logs, "230104", "Dewi Anggraini", 2, "Hadir")
+    # Koreksi log P07 dari Alfa menjadi Izin memakai update_by_id.
     logs = update_by_id(logs, "id_log", "P07", {"status": "Izin"})
 
     alfa_logs = filter_by_field(logs, "status", "Alfa")
@@ -173,7 +177,7 @@ def run_demo() -> dict[str, Any]:
 
 
 def run_cli() -> None:
-    """Launch interactive terminal UI for Class Attendance tracking."""
+    """Jalankan antarmuka terminal interaktif untuk Presensi Kelas."""
     state: dict[str, Any] = {"logs": list(INITIAL_LOGS)}
 
     def show_all_logs() -> bool:

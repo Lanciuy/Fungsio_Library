@@ -29,7 +29,7 @@ from fungsio_lib import (
 
 
 class TestFungsioLibCore(unittest.TestCase):
-    """Verify correctness, edge cases, and strict immutability of all 10 functions."""
+    """Uji kebenaran logika, edge case, dan immutability ke-10 fungsi library."""
 
     def setUp(self) -> None:
         self.sample_data = [
@@ -39,6 +39,7 @@ class TestFungsioLibCore(unittest.TestCase):
         ]
 
     def test_add_record_immutability(self) -> None:
+        """Pastikan add_record tidak memutasi list awal maupun referensi dict baru."""
         new_item = {"id": "4", "name": "Kopi", "category": "Drink", "price": 12000, "tags": ["hot"]}
         result = add_record(self.sample_data, new_item)
         self.assertEqual(len(self.sample_data), 3)
@@ -47,6 +48,7 @@ class TestFungsioLibCore(unittest.TestCase):
         self.assertEqual(result[3]["tags"], ["hot"])
 
     def test_filter_by_field(self) -> None:
+        """Pastikan filter_by_field hanya mengambil record dengan field & nilai yang cocok."""
         foods = filter_by_field(self.sample_data, "category", "Food")
         self.assertEqual(len(foods), 2)
         self.assertEqual([item["id"] for item in foods], ["1", "3"])
@@ -54,6 +56,7 @@ class TestFungsioLibCore(unittest.TestCase):
         self.assertEqual(none_match, [])
 
     def test_search_by_keyword(self) -> None:
+        """Pastikan pencarian mengabaikan spasi tepi, huruf besar/kecil, dan fallback saat kosong."""
         matches = search_by_keyword(self.sample_data, "name", "  NASI ")
         self.assertEqual(len(matches), 1)
         self.assertEqual(matches[0]["id"], "1")
@@ -61,16 +64,19 @@ class TestFungsioLibCore(unittest.TestCase):
         self.assertEqual(len(all_items), 3)
 
     def test_update_by_id_immutability(self) -> None:
+        """Pastikan update_by_id memperbarui salinan baru tanpa mengubah data awal."""
         updated = update_by_id(self.sample_data, "id", "2", {"price": 7000})
         self.assertEqual(self.sample_data[1]["price"], 5000)
         self.assertEqual(updated[1]["price"], 7000)
 
     def test_remove_by_id(self) -> None:
+        """Pastikan remove_by_id membuang record ber-ID target tanpa mutasi list asal."""
         remaining = remove_by_id(self.sample_data, "id", "2")
         self.assertEqual(len(self.sample_data), 3)
         self.assertEqual([item["id"] for item in remaining], ["1", "3"])
 
     def test_transform_records_protects_source(self) -> None:
+        """Pastikan transform_records mengisolasi sumber jika callback memutasi argumennya."""
         def mutate_and_enrich(item: dict) -> dict:
             item["tags"].append("checked")
             return {**item, "double_price": item["price"] * 2}
@@ -80,6 +86,7 @@ class TestFungsioLibCore(unittest.TestCase):
         self.assertEqual(transformed[0]["double_price"], 36000)
 
     def test_sum_by_field_and_bool_rejection(self) -> None:
+        """Pastikan sum_by_field menjumlahkan akurat dan menolak tipe bool."""
         total = sum_by_field(self.sample_data, "price")
         self.assertEqual(total, 38000.0)
         self.assertEqual(sum_by_field([], "price"), 0.0)
@@ -87,18 +94,21 @@ class TestFungsioLibCore(unittest.TestCase):
             sum_by_field([{"price": True}], "price")
 
     def test_group_by_field(self) -> None:
+        """Pastikan group_by_field mengelompokkan record sesuai nilai key."""
         grouped = group_by_field(self.sample_data, "category")
         self.assertEqual(set(grouped.keys()), {"Food", "Drink"})
         self.assertEqual(len(grouped["Food"]), 2)
         self.assertEqual(len(grouped["Drink"]), 1)
 
     def test_sort_records_and_rank(self) -> None:
+        """Pastikan sort_records mengurutkan dan menyematkan rank 1..N tanpa mengubah data asal."""
         ranked = sort_records(self.sample_data, "price", descending=True)
         self.assertEqual([item["id"] for item in ranked], ["1", "3", "2"])
         self.assertEqual([item["rank"] for item in ranked], [1, 2, 3])
         self.assertNotIn("rank", self.sample_data[0])
 
     def test_calculate_summary_stats(self) -> None:
+        """Pastikan statistik mengembalikan count/total/avg/min/max serta aman saat list kosong."""
         stats = calculate_summary_stats(self.sample_data, "price")
         self.assertEqual(stats["count"], 3.0)
         self.assertEqual(stats["total"], 38000.0)
@@ -112,9 +122,10 @@ class TestFungsioLibCore(unittest.TestCase):
 
 
 class TestApplicationsAndMatrixCompliance(unittest.TestCase):
-    """Verify all 5 applications run cleanly and satisfy the >= 3 apps per function rule."""
+    """Uji integrasi 5 aplikasi dan kepatuhan syarat minimal 3 aplikasi per fungsi."""
 
     def test_all_five_app_demos(self) -> None:
+        """Verifikasi output kalkulasi bisnis dari kelima demo aplikasi."""
         buffer = io.StringIO()
         with redirect_stdout(buffer):
             kasir_res = kasir_kantin.run_demo()
@@ -123,30 +134,30 @@ class TestApplicationsAndMatrixCompliance(unittest.TestCase):
             keuangan_res = keuangan_pribadi.run_demo()
             nilai_res = nilai_mahasiswa.run_demo()
 
-        # App 1: Kasir Kantin assertions (2*18000 + 1*20000 + 2*5000 = 66000; 10% disc = 6600 -> 59400; +11% = 65934)
+        # Kasir: 2*18000 + 1*20000 + 2*5000 = 66000; diskon 10% = 6600; +PPN 11% = 65934.
         self.assertAlmostEqual(kasir_res["checkout"]["gross_total"], 66000.0)
         self.assertAlmostEqual(kasir_res["checkout"]["discount"], 6600.0)
         self.assertAlmostEqual(kasir_res["checkout"]["grand_total"], 65934.0)
 
-        # App 2: Presensi Kelas assertions
+        # Presensi: pastikan semua mahasiswa terekap dan peringkat 1 terisi.
         self.assertGreaterEqual(len(presensi_res["recaps"]), 4)
         self.assertEqual(presensi_res["recaps"][0]["rank"], 1)
 
-        # App 3: Perpustakaan Mini assertions (L01: 10->3d*2000=6000, L02: 12->5d*2000=10000, L04: 9->2d*2000=4000 => total 20000)
+        # Perpustakaan: L01 (telat 3 hari = 6000) + L02 (5 hari = 10000) + L04 (2 hari = 4000) = 20000.
         self.assertAlmostEqual(perpus_res["fine_report"]["total_denda"], 20000.0)
 
-        # App 4: Keuangan Pribadi assertions
-        # Income: 2500000 + 450000 = 2950000; Expenses: 60000 + 185000 + 110000 + 75000 + 120000 = 550000
+        # Keuangan: Pemasukan 2.950.000, Pengeluaran 550.000, Saldo bersih 2.400.000.
         self.assertAlmostEqual(keuangan_res["total_pemasukan"], 2950000.0)
         self.assertAlmostEqual(keuangan_res["total_pengeluaran"], 550000.0)
         self.assertAlmostEqual(keuangan_res["saldo_bersih"], 2400000.0)
 
-        # App 5: Nilai Mahasiswa assertions
+        # Nilai: 6 mahasiswa dengan peringkat 1 Citra Lestari (grade A).
         self.assertEqual(len(nilai_res["rankings"]), 6)
         self.assertEqual(nilai_res["rankings"][0]["nama"], "Citra Lestari")
         self.assertEqual(nilai_res["rankings"][0]["grade"], "A")
 
     def test_ten_functions_used_in_at_least_three_apps(self) -> None:
+        """Audit AST untuk menjamin tiap dari 10 fungsi dipakai di minimal 3 aplikasi berbeda."""
         self.assertEqual(len(fungsio_lib.__all__), 10)
         apps_dir = Path(__file__).resolve().parent.parent / "apps"
         app_files = [

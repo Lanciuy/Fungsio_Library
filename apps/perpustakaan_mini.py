@@ -15,6 +15,7 @@ from fungsio_lib import (
     update_by_id,
 )
 
+# Batas pinjam bebas denda 7 hari; keterlambatan dikenakan Rp2.000/hari.
 BATAS_PINJAM_HARI = 7
 DENDA_PER_HARI = 2000.0
 
@@ -40,7 +41,7 @@ def borrow_book(
     peminjam: str,
     durasi_hari: int,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Borrow an available book and return updated immutable catalog and loans."""
+    """Catat peminjaman buku baru dan tandai stok buku tidak tersedia."""
     if durasi_hari <= 0:
         raise ValueError("Durasi pinjam minimal 1 hari")
 
@@ -61,6 +62,7 @@ def borrow_book(
         "durasi_hari": durasi_hari,
         "status": "Dipinjam",
     }
+    # Tambah transaksi pinjam via add_record, lalu kunci status katalog via update_by_id.
     updated_loans = add_record(loans, new_loan)
     updated_catalog = update_by_id(catalog, "id_buku", id_buku, {"tersedia": False})
     return updated_catalog, updated_loans
@@ -72,7 +74,7 @@ def return_book(
     id_pinjam: str,
     actual_days: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Mark an active loan as returned and restore the book's catalog availability."""
+    """Tandai pinjaman selesai dan pulihkan ketersediaan buku di katalog."""
     matched_loans = filter_by_field(loans, "id_pinjam", id_pinjam)
     if not matched_loans:
         raise ValueError(f"ID peminjaman '{id_pinjam}' tidak ditemukan")
@@ -88,7 +90,8 @@ def return_book(
 
 
 def calculate_fines(loans: list[dict[str, Any]]) -> dict[str, Any]:
-    """Compute overdue days, per-loan fines, total fine revenue, and fine stats."""
+    """Hitung hari telat, denda per pinjaman, total denda, dan statistik denda."""
+    # Hitung selisih hari melewati batas 7 hari, minimal 0 agar pinjaman tepat waktu tidak minus.
     loans_with_fines = transform_records(
         loans,
         lambda loan: {
@@ -107,6 +110,7 @@ def calculate_fines(loans: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _print_catalog(catalog: list[dict[str, Any]], title: str = "Katalog Buku") -> None:
+    """Tampilkan daftar buku katalog beserta status ketersediaannya."""
     print(f"\n[{title}]")
     if not catalog:
         print("  (Tidak ada buku)")
@@ -119,6 +123,7 @@ def _print_catalog(catalog: list[dict[str, Any]], title: str = "Katalog Buku") -
 
 
 def _print_loans_with_fines(fine_report: dict[str, Any], title: str = "Daftar Peminjaman & Denda") -> None:
+    """Cetak tabel peminjaman beserta perhitungan telat, denda, dan ringkasan statistik."""
     print(f"\n[{title}]")
     loans = fine_report["loans"]
     if not loans:
@@ -144,7 +149,7 @@ def _print_loans_with_fines(fine_report: dict[str, Any], title: str = "Daftar Pe
 
 
 def run_demo() -> dict[str, Any]:
-    """Execute an end-to-end automated walkthrough of the Mini Library app."""
+    """Jalankan skenario demo otomatis App 3 untuk verifikasi dan pengujian."""
     print_header("APP 3: PERPUSTAKAAN MINI (Katalog, Peminjaman, Denda)")
     catalog = INITIAL_CATALOG
     loans = INITIAL_LOANS
@@ -152,6 +157,7 @@ def run_demo() -> dict[str, Any]:
     available_books = filter_by_field(catalog, "tersedia", True)
     _print_catalog(available_books, "Buku Tersedia untuk Dipinjam")
 
+    # Kelompokkan buku per kategori memakai group_by_field.
     grouped_catalog = group_by_field(catalog, "kategori")
     print("\n[Rekap Jumlah Judul per Kategori]")
     for category, items in grouped_catalog.items():
@@ -160,6 +166,7 @@ def run_demo() -> dict[str, Any]:
     search_code = search_by_keyword(catalog, "judul", "code")
     _print_catalog(search_code, "Pencarian Judul: 'code'")
 
+    # Simulasi pinjam B01, kembalikan L01, dan hapus log lama L03 via remove_by_id.
     catalog, loans = borrow_book(catalog, loans, "B01", "Nadia", 9)
     catalog, loans = return_book(catalog, loans, "L01", actual_days=10)
     loans = remove_by_id(loans, "id_pinjam", "L03")
@@ -176,7 +183,7 @@ def run_demo() -> dict[str, Any]:
 
 
 def run_cli() -> None:
-    """Launch interactive terminal UI for the Mini Library application."""
+    """Jalankan antarmuka terminal interaktif untuk Perpustakaan Mini."""
     state: dict[str, Any] = {
         "catalog": list(INITIAL_CATALOG),
         "loans": list(INITIAL_LOANS),

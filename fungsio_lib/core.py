@@ -9,11 +9,7 @@ Collection = list[Record]
 
 
 def _validate_collection(collection: Collection) -> None:
-    """Validate that collection is a list of dictionary records.
-
-    Validating at the library boundary enforces predictable failure early
-    before pure transformations execute downstream.
-    """
+    """Validasi bahwa input berupa list of dict sebelum diproses."""
     if not isinstance(collection, list):
         raise TypeError("collection must be a list of dict records")
     for idx, item in enumerate(collection):
@@ -22,36 +18,28 @@ def _validate_collection(collection: Collection) -> None:
 
 
 def _to_numeric(value: Any, field_name: str) -> float:
-    """Convert a scalar field value to float while rejecting booleans.
-
-    Python treats bool as a subclass of int, so rejecting booleans explicitly
-    prevents accidental True/False arithmetic corruption in numeric aggregations.
-    """
+    """Konversi angka ke float sambil menolak bool agar True/False tidak terhitung 1/0."""
+    # Di Python, bool adalah turunan int sehingga wajib ditolak eksplisit.
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(f"Field '{field_name}' must contain numeric values, got {type(value).__name__}")
     return float(value)
 
 
 def add_record(collection: Collection, record: Record) -> Collection:
-    """Return a new collection with a deep copy of record appended.
-
-    Deep copying prevents caller mutations from leaking into existing state.
-    """
+    """[Fungsi 1] Tambah record baru secara immutable (tidak mengubah list asal)."""
     _validate_collection(collection)
     if not isinstance(record, dict):
         raise TypeError("record must be a dict")
+    # Deep copy menjaga data lama aman dari mutasi referensi dict bersarang.
     return [deepcopy(item) for item in collection] + [deepcopy(record)]
 
 
 def filter_by_field(collection: Collection, field: str, value: Any) -> Collection:
-    """Return a new collection containing records where field equals value.
-
-    Checking key membership before value comparison avoids falsely matching
-    records that omit the field when filtering for None.
-    """
+    """[Fungsi 2] Saring record yang nilai field-nya sama persis dengan value."""
     _validate_collection(collection)
     if not isinstance(field, str) or not field:
         raise ValueError("field must be a non-empty string")
+    # Cek keberadaan key lebih dulu agar field yang hilang tidak cocok saat value=None.
     return [
         deepcopy(item)
         for item in collection
@@ -60,11 +48,7 @@ def filter_by_field(collection: Collection, field: str, value: Any) -> Collectio
 
 
 def search_by_keyword(collection: Collection, field: str, keyword: str) -> Collection:
-    """Return records whose field contains keyword (case-insensitive substring).
-
-    Trimming and lowercasing the keyword allows human-friendly CLI searches
-    without mutating the underlying stored text casing.
-    """
+    """[Fungsi 3] Cari record berdasarkan substring pada field (case-insensitive)."""
     _validate_collection(collection)
     if not isinstance(field, str) or not field:
         raise ValueError("field must be a non-empty string")
@@ -72,6 +56,7 @@ def search_by_keyword(collection: Collection, field: str, keyword: str) -> Colle
         raise TypeError("keyword must be a string")
 
     normalized = keyword.strip().lower()
+    # Keyword kosong mengembalikan seluruh salinan data agar pencarian reset mulus.
     if not normalized:
         return [deepcopy(item) for item in collection]
 
@@ -88,11 +73,7 @@ def update_by_id(
     target_id: Any,
     updates: dict[str, Any],
 ) -> Collection:
-    """Return a new collection with matching records merged with updates.
-
-    Non-matching records are deep-copied untouched, ensuring pure state updates
-    that are safe for undo/audit histories or concurrent reads.
-    """
+    """[Fungsi 4] Perbarui field pada record ber-ID target secara immutable."""
     _validate_collection(collection)
     if not isinstance(id_field, str) or not id_field:
         raise ValueError("id_field must be a non-empty string")
@@ -102,6 +83,7 @@ def update_by_id(
     updated_collection: Collection = []
     for item in collection:
         copied_item = deepcopy(item)
+        # Gabungkan salinan lama + updates hanya pada record yang ID-nya cocok.
         if id_field in copied_item and copied_item[id_field] == target_id:
             copied_item = {**copied_item, **deepcopy(updates)}
         updated_collection.append(copied_item)
@@ -109,10 +91,7 @@ def update_by_id(
 
 
 def remove_by_id(collection: Collection, id_field: str, target_id: Any) -> Collection:
-    """Return a new collection excluding records whose id_field matches target_id.
-
-    Records missing id_field are preserved so deletion only affects exact matches.
-    """
+    """[Fungsi 5] Hapus record dengan ID target dan kembalikan list baru."""
     _validate_collection(collection)
     if not isinstance(id_field, str) or not id_field:
         raise ValueError("id_field must be a non-empty string")
@@ -128,17 +107,14 @@ def transform_records(
     collection: Collection,
     transformer: Callable[[Record], Record],
 ) -> Collection:
-    """Apply a pure mapping function to every record and return a new collection.
-
-    Passing a deep copy to transformer prevents accidental in-place mutation of
-    source records even if a caller-supplied lambda mutates its argument.
-    """
+    """[Fungsi 6] Higher-order function untuk memetakan/menghitung atribut baru tiap record."""
     _validate_collection(collection)
     if not callable(transformer):
         raise TypeError("transformer must be callable")
 
     transformed: Collection = []
     for idx, item in enumerate(collection):
+        # Kirim deepcopy ke transformer agar fungsi pemanggil tidak merusak data asli.
         result = transformer(deepcopy(item))
         if not isinstance(result, dict):
             raise TypeError(f"transformer must return a dict for item at index {idx}")
@@ -147,16 +123,13 @@ def transform_records(
 
 
 def sum_by_field(collection: Collection, numeric_field: str) -> float:
-    """Reduce a numeric field across all records into a single floating-point sum.
-
-    Missing or None values are treated as 0.0 so sparse records can still be
-    aggregated cleanly without crashing interactive reports.
-    """
+    """[Fungsi 7] Jumlahkan nilai numerik pada satu field menggunakan reduce."""
     _validate_collection(collection)
     if not isinstance(numeric_field, str) or not numeric_field:
         raise ValueError("numeric_field must be a non-empty string")
 
     def _accumulate(total: float, item: Record) -> float:
+        # Field kosong/None diperlakukan 0.0 agar agregasi data parsial tetap aman.
         raw_value = item.get(numeric_field, 0.0)
         if raw_value is None:
             return total
@@ -166,11 +139,7 @@ def sum_by_field(collection: Collection, numeric_field: str) -> float:
 
 
 def group_by_field(collection: Collection, key_field: str) -> dict[Any, Collection]:
-    """Group deep-copied records into a dictionary keyed by key_field values.
-
-    Preserves insertion order of groups and relative order of records within
-    each group for deterministic CLI reporting.
-    """
+    """[Fungsi 8] Kelompokkan koleksi data ke dict berdasarkan nilai key_field."""
     _validate_collection(collection)
     if not isinstance(key_field, str) or not key_field:
         raise ValueError("key_field must be a non-empty string")
@@ -183,6 +152,7 @@ def group_by_field(collection: Collection, key_field: str) -> dict[Any, Collecti
                 grouped[group_key] = []
             grouped[group_key].append(deepcopy(item))
         except TypeError as exc:
+            # Nilai key harus hashable (seperti str/int) agar bisa jadi key dictionary.
             raise TypeError(f"Group key '{group_key}' for field '{key_field}' must be hashable") from exc
     return grouped
 
@@ -192,16 +162,13 @@ def sort_records(
     sort_field: str,
     descending: bool = True,
 ) -> Collection:
-    """Return records sorted by sort_field and annotated with a 1-based 'rank'.
-
-    Records with missing/None sort values fall back to 0 so sorting mixed
-    optional records remains predictable while maintaining immutability.
-    """
+    """[Fungsi 9] Urutkan record berdasarkan sort_field dan sisipkan atribut 'rank' (1..N)."""
     _validate_collection(collection)
     if not isinstance(sort_field, str) or not sort_field:
         raise ValueError("sort_field must be a non-empty string")
 
     def _sort_key(item: Record) -> Any:
+        # Nilai None diganti 0 agar perbandingan sort tidak memicu TypeError.
         val = item.get(sort_field)
         return 0 if val is None else val
 
@@ -217,11 +184,7 @@ def sort_records(
 
 
 def calculate_summary_stats(collection: Collection, numeric_field: str) -> dict[str, float]:
-    """Compute count, total, average, min, and max for a numeric field.
-
-    Returns zeroed metrics on empty or non-populated collections so UI layers
-    never suffer ZeroDivisionError or ValueError from min()/max().
-    """
+    """[Fungsi 10] Hitung ringkasan statistik (count, total, average, min, max) field numerik."""
     _validate_collection(collection)
     if not isinstance(numeric_field, str) or not numeric_field:
         raise ValueError("numeric_field must be a non-empty string")
@@ -232,6 +195,7 @@ def calculate_summary_stats(collection: Collection, numeric_field: str) -> dict[
         if numeric_field in item and item[numeric_field] is not None
     ]
 
+    # Kembalikan nol semua saat koleksi kosong agar pemanggil terhindar dari ZeroDivisionError.
     if not values:
         return {
             "count": 0.0,
