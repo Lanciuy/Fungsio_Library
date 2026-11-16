@@ -15,7 +15,7 @@ from apps import (
     prompt_int,
 )
 
-# Daftar aplikasi yang tampil di portal CLI utama beserta modul pengelolanya.
+# Daftar 5 aplikasi CLI yang terdaftar di portal utama.
 APP_REGISTRY = [
     ("kasir_kantin", "Kasir Kantin (Menu, Keranjang, Total Belanja)", kasir_kantin),
     ("presensi_kelas", "Presensi Kelas (Kehadiran & Rekap Mahasiswa)", presensi_kelas),
@@ -25,13 +25,13 @@ APP_REGISTRY = [
 ]
 
 
+# Pindai AST tiap file apps/*.py untuk memetakan fungsi fungsio_lib mana saja yang dipanggil.
 def inspect_library_usage() -> dict[str, set[str]]:
     """Audit pemanggilan 10 fungsi fungsio_lib di tiap file apps/ lewat AST."""
     apps_dir = Path(__file__).resolve().parent / "apps"
     lib_functions = set(fungsio_lib.__all__)
     usage: dict[str, set[str]] = {fn_name: set() for fn_name in lib_functions}
 
-    # Memindai AST secara statis memastikan tabel matriks selalu sesuai kode aktual.
     for module_key, _, _ in APP_REGISTRY:
         source_path = apps_dir / f"{module_key}.py"
         tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
@@ -47,6 +47,7 @@ def inspect_library_usage() -> dict[str, set[str]]:
     return usage
 
 
+# Cetak tabel audit pemakaian 10 fungsi library di 5 aplikasi dari hasil AST.
 def print_usage_matrix() -> None:
     """Cetak tabel verifikasi pemakaian 10 fungsi library di 5 aplikasi."""
     print_header("VERIFIKASI MATRIKS PEMAKAIAN 10 FUNGSI DI 5 APLIKASI")
@@ -64,6 +65,7 @@ def print_usage_matrix() -> None:
         print(f"  {idx:<3} | {fn_name:<24} | {marks} | {len(used_apps)} App")
 
 
+# Jalankan demo otomatis 5 aplikasi secara berurutan lalu tampilkan matriks audit AST.
 def run_all_demos() -> None:
     """Jalankan demo otomatis ke-5 aplikasi lalu tampilkan matriks pemakaian fungsi."""
     for _, _, module in APP_REGISTRY:
@@ -71,6 +73,7 @@ def run_all_demos() -> None:
     print_usage_matrix()
 
 
+# Portal menu utama CLI untuk memilih dan menjalankan salah satu dari 5 aplikasi.
 def run_interactive_launcher() -> None:
     """Tampilkan portal menu interaktif untuk memilih satu dari 5 aplikasi CLI."""
     while True:
@@ -87,6 +90,7 @@ def run_interactive_launcher() -> None:
         selected_module.run_cli()
 
 
+# Titik masuk program: jalankan --demo bila diminta argumen CLI, selain itu buka portal interaktif.
 def main() -> None:
     """Entrypoint CLI: jalankan --demo untuk demo otomatis atau menu interaktif."""
     parser = argparse.ArgumentParser(

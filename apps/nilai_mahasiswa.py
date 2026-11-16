@@ -30,6 +30,7 @@ INITIAL_STUDENTS: list[dict[str, Any]] = [
 ]
 
 
+# Validasi agar tiap komponen nilai berada di rentang 0 - 100.
 def _validate_score(score: float, label: str) -> float:
     """Pastikan nilai komponen berada pada rentang 0 sampai 100."""
     if score < 0.0 or score > 100.0:
@@ -37,6 +38,7 @@ def _validate_score(score: float, label: str) -> float:
     return float(score)
 
 
+# Konversi angka nilai akhir menjadi huruf mutu A, B, C, D, atau E.
 def _determine_grade(final_score: float) -> str:
     """Konversi nilai akhir numerik ke huruf mutu (A-E)."""
     if final_score >= 85.0:
@@ -50,6 +52,7 @@ def _determine_grade(final_score: float) -> str:
     return "E"
 
 
+# Cek duplikasi NIM via filter_by_field lalu tambah data nilai mahasiswa via add_record.
 def add_student_scores(
     students: list[dict[str, Any]],
     nim: str,
@@ -75,6 +78,7 @@ def add_student_scores(
     return add_record(students, entry)
 
 
+# Validasi NIM & rentang nilai komponen lalu perbarui lewat update_by_id.
 def revise_student_scores(
     students: list[dict[str, Any]],
     nim: str,
@@ -88,6 +92,7 @@ def revise_student_scores(
     return update_by_id(students, "nim", clean_nim, validated)
 
 
+# Validasi NIM lalu hapus data mahasiswa lewat remove_by_id.
 def delete_student_scores(students: list[dict[str, Any]], nim: str) -> list[dict[str, Any]]:
     """Hapus data nilai mahasiswa berdasarkan NIM setelah validasi keberadaan data."""
     clean_nim = nim.strip()
@@ -96,9 +101,9 @@ def delete_student_scores(students: list[dict[str, Any]], nim: str) -> list[dict
     return remove_by_id(students, "nim", clean_nim)
 
 
+# Alur penilaian: transform (nilai akhir, grade, lulus) -> sort (peringkat) -> filter, group, & stats.
 def evaluate_class_grades(students: list[dict[str, Any]]) -> dict[str, Any]:
     """Hitung nilai akhir berbobot, huruf mutu, peringkat kelas, dan statistik nilai."""
-    # Hitung nilai akhir berbobot, grade, dan status kelulusan dalam satu pass transform_records.
     graded_students = transform_records(
         students,
         lambda s: {
@@ -116,7 +121,6 @@ def evaluate_class_grades(students: list[dict[str, Any]]) -> dict[str, Any]:
             "status_lulus": "Lulus" if nilai >= 60.0 else "Mengulang",
         },
     )
-    # Urutkan dari nilai akhir tertinggi sekaligus beri peringkat (rank 1..N) via sort_records.
     rankings = sort_records(graded_students, "nilai_akhir", descending=True)
     passed_students = filter_by_field(rankings, "status_lulus", "Lulus")
     grade_distribution = group_by_field(rankings, "grade")
@@ -130,6 +134,7 @@ def evaluate_class_grades(students: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+# Cetak tabel peringkat mahasiswa lengkap dengan komponen nilai, nilai akhir, grade, dan status.
 def _print_rankings(students: list[dict[str, Any]], title: str = "Peringkat Nilai Akhir Mahasiswa") -> None:
     """Cetak tabel komponen nilai, nilai akhir, grade, dan peringkat mahasiswa."""
     print(f"\n[{title}]")
@@ -150,12 +155,12 @@ def _print_rankings(students: list[dict[str, Any]], title: str = "Peringkat Nila
         )
 
 
+# Simulasi otomatis fitur Nilai Mahasiswa untuk demo dan pengujian.
 def run_demo() -> dict[str, Any]:
     """Jalankan skenario demo otomatis App 5 untuk verifikasi dan pengujian."""
     print_header("APP 5: NILAI MAHASISWA (Komponen Nilai, Nilai Akhir, Peringkat)")
     students = INITIAL_STUDENTS
     students = add_student_scores(students, "230106", "Fajar Nugroho", 88, 84, 82, 86)
-    # Revisi nilai UAS mahasiswa 230102 agar lulus setelah perbaikan.
     students = revise_student_scores(students, "230102", {"uas": 68.0})
 
     evaluation = evaluate_class_grades(students)
@@ -180,10 +185,12 @@ def run_demo() -> dict[str, Any]:
     }
 
 
+# Jalankan menu CLI interaktif Nilai Mahasiswa.
 def run_cli() -> None:
     """Jalankan antarmuka terminal interaktif untuk Nilai Mahasiswa."""
     state: dict[str, Any] = {"students": list(INITIAL_STUDENTS)}
 
+    # Tampilkan hasil kalkulasi nilai akhir, grade, status, dan rank mahasiswa setelah input/revisi.
     def _print_student_feedback(nim: str) -> None:
         evaluation = evaluate_class_grades(state["students"])
         matched = filter_by_field(evaluation["rankings"], "nim", nim)
@@ -195,6 +202,7 @@ def run_cli() -> None:
             )
         _print_rankings(evaluation["rankings"])
 
+    # Menu 1: Tampilkan tabel peringkat nilai akhir dan statistik rata-rata kelas.
     def show_rankings() -> None:
         evaluation = evaluate_class_grades(state["students"])
         _print_rankings(evaluation["rankings"])
@@ -204,6 +212,7 @@ def run_cli() -> None:
             f"Tertinggi: {stats['max']:.2f} | Terendah: {stats['min']:.2f}"
         )
 
+    # Menu 2: Input nilai mahasiswa baru via add_student_scores lalu tampilkan peringkatnya.
     def add_student_action() -> None:
         nim = prompt_non_empty("NIM Mahasiswa")
         nama = prompt_non_empty("Nama Mahasiswa")
@@ -220,6 +229,7 @@ def run_cli() -> None:
         except ValueError as err:
             print(f"Gagal: {err}")
 
+    # Menu 3: Revisi 1 komponen nilai atau seluruh 4 komponen sekaligus via revise_student_scores.
     def revise_action() -> None:
         evaluation = evaluate_class_grades(state["students"])
         _print_rankings(evaluation["rankings"])
@@ -248,6 +258,7 @@ def run_cli() -> None:
         except ValueError as err:
             print(f"Gagal: {err}")
 
+    # Menu 4: Hapus data mahasiswa via delete_student_scores dan perbarui tabel peringkat.
     def delete_student_action() -> None:
         evaluation = evaluate_class_grades(state["students"])
         _print_rankings(evaluation["rankings"])
@@ -261,6 +272,7 @@ def run_cli() -> None:
         except ValueError as err:
             print(f"Gagal: {err}")
 
+    # Menu 5: Saring kelulusan (filter_by_field) atau cari nama mahasiswa (search_by_keyword).
     def filter_and_search_action() -> None:
         evaluation = evaluate_class_grades(state["students"])
         print("  1. Filter Status Lulus/Mengulang  2. Cari Nama Mahasiswa")
@@ -274,6 +286,7 @@ def run_cli() -> None:
             results = search_by_keyword(evaluation["rankings"], "nama", keyword)
             _print_rankings(results, f"Hasil Cari '{keyword}'")
 
+    # Menu 6: Tampilkan pengelompokan mahasiswa per huruf mutu dari group_by_field.
     def distribution_action() -> None:
         evaluation = evaluate_class_grades(state["students"])
         print("\n[Distribusi Grade Mahasiswa]")

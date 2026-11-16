@@ -34,6 +34,7 @@ INITIAL_TRANSACTIONS: list[dict[str, Any]] = [
 ]
 
 
+# Validasi dan seragamkan tipe transaksi (Pemasukan atau Pengeluaran).
 def _normalize_type(raw_type: str) -> str:
     """Validasi dan seragamkan tipe transaksi (Pemasukan atau Pengeluaran)."""
     clean = raw_type.strip().capitalize()
@@ -42,6 +43,7 @@ def _normalize_type(raw_type: str) -> str:
     return clean
 
 
+# Tambah transaksi baru secara immutable via add_record dengan ID otomatis bebas bentrok.
 def add_transaction(
     transactions: list[dict[str, Any]],
     tanggal: str,
@@ -65,6 +67,7 @@ def add_transaction(
     return add_record(transactions, entry)
 
 
+# Validasi ID & field perubahan lalu perbarui transaksi via update_by_id.
 def update_transaction(
     transactions: list[dict[str, Any]],
     id_trx: str,
@@ -93,6 +96,7 @@ def update_transaction(
     return update_by_id(transactions, "id_trx", clean_id, clean_updates)
 
 
+# Validasi ID transaksi lalu hapus transaksi via remove_by_id.
 def delete_transaction(transactions: list[dict[str, Any]], id_trx: str) -> list[dict[str, Any]]:
     """Hapus transaksi berdasarkan ID setelah memvalidasi keberadaannya."""
     clean_id = id_trx.strip().upper()
@@ -101,9 +105,9 @@ def delete_transaction(transactions: list[dict[str, Any]], id_trx: str) -> list[
     return remove_by_id(transactions, "id_trx", clean_id)
 
 
+# Alur analisis: transform (+ / - arus_kas) -> filter (masuk/keluar) -> sum -> group (kategori) -> sort & stats.
 def analyze_finances(transactions: list[dict[str, Any]]) -> dict[str, Any]:
     """Hitung arus kas bertanda, saldo bersih, rekap kategori, dan statistik pengeluaran."""
-    # Ubah nominal jadi bertanda (+ masuk, - keluar) lewat transform_records agar saldo mudah dijumlah.
     signed_transactions = transform_records(
         transactions,
         lambda trx: {
@@ -118,7 +122,6 @@ def analyze_finances(transactions: list[dict[str, Any]]) -> dict[str, Any]:
     total_pengeluaran = sum_by_field(expenses, "nominal")
     saldo_bersih = sum_by_field(signed_transactions, "arus_kas")
 
-    # Kelompokkan transaksi per kategori lewat group_by_field lalu jumlahkan arus kas tiap kategori.
     grouped_categories = group_by_field(signed_transactions, "kategori")
     category_totals = [
         {
@@ -130,7 +133,6 @@ def analyze_finances(transactions: list[dict[str, Any]]) -> dict[str, Any]:
         for category, items in grouped_categories.items()
     ]
 
-    # Urutkan pengeluaran terbesar memakai sort_records dan hitung statistiknya.
     largest_expenses = sort_records(expenses, "nominal", descending=True)
     expense_stats = calculate_summary_stats(expenses, "nominal")
 
@@ -147,6 +149,7 @@ def analyze_finances(transactions: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+# Cetak daftar seluruh transaksi pemasukan dan pengeluaran.
 def _print_transactions(transactions: list[dict[str, Any]], title: str = "Daftar Transaksi") -> None:
     """Cetak daftar transaksi pemasukan dan pengeluaran."""
     print(f"\n[{title}]")
@@ -162,6 +165,7 @@ def _print_transactions(transactions: list[dict[str, Any]], title: str = "Daftar
         )
 
 
+# Cetak ringkasan 1 baris total pemasukan, pengeluaran, dan saldo bersih.
 def _print_balance_summary(report: dict[str, Any]) -> None:
     """Cetak ringkasan cepat pemasukan, pengeluaran, dan saldo bersih."""
     print(
@@ -171,6 +175,7 @@ def _print_balance_summary(report: dict[str, Any]) -> None:
     )
 
 
+# Cetak laporan lengkap keuangan: saldo, statistik belanja, rekap kategori, dan top 3 pengeluaran.
 def _print_financial_report(report: dict[str, Any]) -> None:
     """Cetak ringkasan saldo bersih, rekap kategori, dan 3 pengeluaran terbesar."""
     print("\n[Ringkasan Keuangan Pribadi]")
@@ -199,13 +204,13 @@ def _print_financial_report(report: dict[str, Any]) -> None:
         )
 
 
+# Simulasi otomatis fitur Keuangan Pribadi untuk mode demo dan pengujian.
 def run_demo() -> dict[str, Any]:
     """Jalankan skenario demo otomatis App 4 untuk verifikasi dan pengujian."""
     print_header("APP 4: KEUANGAN PRIBADI (Pemasukan, Pengeluaran, Kategori)")
     transactions = INITIAL_TRANSACTIONS
     transactions = add_transaction(transactions, "2026-11-07", "Pengeluaran", "Hiburan", "Nonton bioskop", 75000)
     transactions = add_transaction(transactions, "2026-11-08", "Pengeluaran", "Makan", "Traktir teman", 120000)
-    # Hapus transaksi T02 memakai delete_transaction.
     transactions = delete_transaction(transactions, "T02")
 
     report = analyze_finances(transactions)
@@ -214,14 +219,17 @@ def run_demo() -> dict[str, Any]:
     return report
 
 
+# Jalankan menu CLI interaktif Keuangan Pribadi.
 def run_cli() -> None:
     """Jalankan antarmuka terminal interaktif untuk Keuangan Pribadi."""
     state: dict[str, Any] = {"transactions": list(INITIAL_TRANSACTIONS)}
 
+    # Menu 1: Tampilkan seluruh daftar transaksi beserta ringkasan saldo terkini.
     def show_all() -> None:
         _print_transactions(state["transactions"])
         _print_balance_summary(analyze_finances(state["transactions"]))
 
+    # Menu 2: Input transaksi pemasukan/pengeluaran baru via add_transaction dan perbarui ringkasan saldo.
     def add_action() -> None:
         tanggal = prompt_non_empty("Tanggal (YYYY-MM-DD)")
         tipe = prompt_non_empty("Tipe (Pemasukan/Pengeluaran)")
@@ -237,6 +245,7 @@ def run_cli() -> None:
         except ValueError as err:
             print(f"Gagal: {err}")
 
+    # Menu 3: Ubah field transaksi (tipe/kategori/keterangan/nominal) via update_transaction.
     def edit_action() -> None:
         _print_transactions(state["transactions"])
         if not state["transactions"]:
@@ -262,6 +271,7 @@ def run_cli() -> None:
         except ValueError as err:
             print(f"Gagal: {err}")
 
+    # Menu 4: Saring transaksi berdasarkan tipe/kategori (filter_by_field) atau cari keterangan (search_by_keyword).
     def filter_and_search_action() -> None:
         print("  1. Filter Tipe (Pemasukan/Pengeluaran)  2. Filter Kategori  3. Cari Keterangan")
         mode = prompt_int("Pilih mode", min_value=1, max_value=3)
@@ -281,6 +291,7 @@ def run_cli() -> None:
         except ValueError as err:
             print(f"Gagal: {err}")
 
+    # Menu 5: Hapus transaksi via delete_transaction dan tampilkan ringkasan saldo terbaru.
     def remove_action() -> None:
         _print_transactions(state["transactions"])
         if not state["transactions"]:
@@ -293,6 +304,7 @@ def run_cli() -> None:
         except ValueError as err:
             print(f"Gagal: {err}")
 
+    # Menu 6: Tampilkan laporan lengkap arus kas, rekap per kategori, dan pengeluaran terbesar.
     def report_action() -> None:
         report = analyze_finances(state["transactions"])
         _print_financial_report(report)

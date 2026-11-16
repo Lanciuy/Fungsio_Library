@@ -40,6 +40,7 @@ INITIAL_LOGS: list[dict[str, Any]] = [
 ]
 
 
+# Validasi dan seragamkan input status (Hadir/Izin/Sakit/Alfa).
 def _normalize_status(raw_status: str) -> str:
     """Validasi dan seragamkan penulisan status kehadiran."""
     formatted = raw_status.strip().capitalize()
@@ -49,6 +50,7 @@ def _normalize_status(raw_status: str) -> str:
     return formatted
 
 
+# Catat presensi baru via add_record, atau perbarui status via update_by_id jika (NIM, pertemuan) sudah ada.
 def record_attendance(
     logs: list[dict[str, Any]],
     nim: str,
@@ -69,7 +71,6 @@ def record_attendance(
     if not resolved_name:
         raise ValueError("Nama mahasiswa tidak boleh kosong")
 
-    # Cegah duplikasi (nim, pertemuan): perbarui status log yang ada via update_by_id.
     existing_meeting = filter_by_field(existing_student, "pertemuan", pertemuan)
     if existing_meeting:
         return update_by_id(logs, "id_log", existing_meeting[0]["id_log"], {"status": clean_status})
@@ -84,6 +85,7 @@ def record_attendance(
     return add_record(logs, entry)
 
 
+# Validasi ID log lalu hapus entri presensi via remove_by_id.
 def delete_attendance_log(logs: list[dict[str, Any]], id_log: str) -> list[dict[str, Any]]:
     """Hapus log presensi berdasarkan ID setelah memvalidasi keberadaannya."""
     clean_id = id_log.strip().upper()
@@ -92,9 +94,9 @@ def delete_attendance_log(logs: list[dict[str, Any]], id_log: str) -> list[dict[
     return remove_by_id(logs, "id_log", clean_id)
 
 
+# Alur rekap: transform_records (bobot) -> group_by_field (NIM) -> sum_by_field (poin) -> transform (% & UAS) -> sort.
 def build_student_recaps(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Rekap log presensi per mahasiswa: hitung % hadir, kelayakan UAS, dan peringkat."""
-    # Beri bobot poin pada tiap log presensi lewat transform_records.
     weighted_logs = transform_records(
         logs,
         lambda item: {
@@ -102,7 +104,6 @@ def build_student_recaps(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "poin": STATUS_POINTS.get(item["status"], 0.0),
         },
     )
-    # Kelompokkan seluruh log berdasarkan NIM mahasiswa memakai group_by_field.
     grouped_by_nim = group_by_field(weighted_logs, "nim")
 
     raw_recaps: list[dict[str, Any]] = []
@@ -120,7 +121,6 @@ def build_student_recaps(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
 
-    # Hitung persentase kehadiran dan tentukan status kelayakan UAS (>= 75%) dalam satu pass.
     final_recaps = transform_records(
         raw_recaps,
         lambda rec: {
@@ -133,10 +133,10 @@ def build_student_recaps(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "kelayakan_uas": "Layak UAS" if pct >= MIN_UAS_PERCENTAGE else "Tidak Layak",
         },
     )
-    # Urutkan mahasiswa dari persentase kehadiran tertinggi via sort_records.
     return sort_records(final_recaps, "persentase", descending=True)
 
 
+# Cetak tabel daftar log kehadiran mentah per pertemuan.
 def _print_logs(logs: list[dict[str, Any]], title: str = "Log Presensi Kelas") -> None:
     """Cetak daftar log presensi mentah per pertemuan."""
     print(f"\n[{title}]")
@@ -152,6 +152,7 @@ def _print_logs(logs: list[dict[str, Any]], title: str = "Log Presensi Kelas") -
         )
 
 
+# Cetak tabel rekap kehadiran, persentase hadir, dan kelayakan UAS per mahasiswa.
 def _print_recaps(recaps: list[dict[str, Any]], title: str = "Rekap Kehadiran per Mahasiswa") -> None:
     """Cetak tabel rekap kehadiran, persentase, dan status kelayakan UAS."""
     print(f"\n[{title}]")
@@ -171,13 +172,13 @@ def _print_recaps(recaps: list[dict[str, Any]], title: str = "Rekap Kehadiran pe
         )
 
 
+# Simulasi otomatis fitur Presensi Kelas untuk mode demo dan pengujian.
 def run_demo() -> dict[str, Any]:
     """Jalankan skenario demo otomatis App 2 untuk verifikasi dan pengujian."""
     print_header("APP 2: PRESENSI KELAS (Kehadiran & Rekap per Mahasiswa)")
     logs = INITIAL_LOGS
     logs = record_attendance(logs, "230104", "Dewi Anggraini", 1, "Hadir")
     logs = record_attendance(logs, "230104", "Dewi Anggraini", 2, "Hadir")
-    # Koreksi log P07 dari Alfa menjadi Izin memakai update_by_id.
     logs = update_by_id(logs, "id_log", "P07", {"status": "Izin"})
 
     alfa_logs = filter_by_field(logs, "status", "Alfa")
@@ -196,13 +197,16 @@ def run_demo() -> dict[str, Any]:
     }
 
 
+# Jalankan menu CLI interaktif Presensi Kelas.
 def run_cli() -> None:
     """Jalankan antarmuka terminal interaktif untuk Presensi Kelas."""
     state: dict[str, Any] = {"logs": list(INITIAL_LOGS)}
 
+    # Menu 1: Tampilkan seluruh catatan log kehadiran.
     def show_all_logs() -> None:
         _print_logs(state["logs"])
 
+    # Menu 2: Catat kehadiran mahasiswa (otomatis deteksi nama jika NIM ada) lalu tampilkan rekapnya.
     def add_log_action() -> None:
         nim = prompt_non_empty("NIM Mahasiswa")
         existing_student = filter_by_field(state["logs"], "nim", nim)
@@ -221,6 +225,7 @@ def run_cli() -> None:
         except ValueError as err:
             print(f"Gagal: {err}")
 
+    # Menu 3: Koreksi status presensi lewat update_by_id lalu cetak rekap terbaru mahasiswa terkait.
     def update_log_action() -> None:
         _print_logs(state["logs"])
         id_log = prompt_non_empty("Masukkan ID Log (misal P07)").upper()
@@ -238,6 +243,7 @@ def run_cli() -> None:
         except ValueError as err:
             print(f"Gagal: {err}")
 
+    # Menu 4: Hapus log kehadiran lewat delete_attendance_log lalu tampilkan rekap terbaru.
     def delete_log_action() -> None:
         _print_logs(state["logs"])
         id_log = prompt_non_empty("Masukkan ID Log yang ingin dihapus").upper()
@@ -248,6 +254,7 @@ def run_cli() -> None:
         except ValueError as err:
             print(f"Gagal: {err}")
 
+    # Menu 5: Saring log kehadiran berdasarkan status via filter_by_field.
     def filter_logs_action() -> None:
         status = prompt_non_empty("Filter status (Hadir/Izin/Sakit/Alfa)")
         try:
@@ -257,10 +264,12 @@ def run_cli() -> None:
         except ValueError as err:
             print(f"Gagal: {err}")
 
+    # Menu 6: Tampilkan rekap % hadir dan kelayakan UAS semua mahasiswa.
     def show_recaps_action() -> None:
         recaps = build_student_recaps(state["logs"])
         _print_recaps(recaps)
 
+    # Menu 7: Cari rekap mahasiswa berdasarkan potongan nama via search_by_keyword.
     def search_recap_action() -> None:
         keyword = prompt_non_empty("Masukkan kata kunci nama mahasiswa")
         recaps = build_student_recaps(state["logs"])

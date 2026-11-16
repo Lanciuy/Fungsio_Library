@@ -34,6 +34,7 @@ INITIAL_LOANS: list[dict[str, Any]] = [
 ]
 
 
+# Tambah judul buku baru ke katalog dengan status tersedia=True via add_record.
 def add_book(
     catalog: list[dict[str, Any]],
     judul: str,
@@ -51,6 +52,7 @@ def add_book(
     return add_record(catalog, entry)
 
 
+# Proses peminjaman: cek buku tersedia via filter_by_field -> add_record pinjaman -> kunci buku via update_by_id.
 def borrow_book(
     catalog: list[dict[str, Any]],
     loans: list[dict[str, Any]],
@@ -79,12 +81,12 @@ def borrow_book(
         "durasi_hari": durasi_hari,
         "status": "Dipinjam",
     }
-    # Tambah transaksi pinjam via add_record, lalu kunci status katalog via update_by_id.
     updated_loans = add_record(loans, new_loan)
     updated_catalog = update_by_id(catalog, "id_buku", clean_id, {"tersedia": False})
     return updated_catalog, updated_loans
 
 
+# Proses pengembalian buku: tolak jika sudah kembali, ubah status pinjaman & pulihkan buku via update_by_id.
 def return_book(
     catalog: list[dict[str, Any]],
     loans: list[dict[str, Any]],
@@ -110,6 +112,7 @@ def return_book(
     return updated_catalog, updated_loans
 
 
+# Hapus log pinjaman via remove_by_id dan pulihkan stok buku via update_by_id jika status masih Dipinjam.
 def delete_loan(
     catalog: list[dict[str, Any]],
     loans: list[dict[str, Any]],
@@ -131,9 +134,9 @@ def delete_loan(
     return updated_catalog, updated_loans
 
 
+# Hitung denda: transform_records (hari telat & denda) -> sum_by_field (total) -> calculate_summary_stats.
 def calculate_fines(loans: list[dict[str, Any]]) -> dict[str, Any]:
     """Hitung hari telat, denda per pinjaman, total denda, dan statistik denda."""
-    # Hitung selisih hari melewati batas 7 hari, minimal 0 agar pinjaman tepat waktu tidak minus.
     loans_with_fines = transform_records(
         loans,
         lambda loan: {
@@ -151,6 +154,7 @@ def calculate_fines(loans: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+# Cetak tabel katalog buku beserta status Tersedia / Dipinjam.
 def _print_catalog(catalog: list[dict[str, Any]], title: str = "Katalog Buku") -> None:
     """Tampilkan daftar buku katalog beserta status ketersediaannya."""
     print(f"\n[{title}]")
@@ -164,6 +168,7 @@ def _print_catalog(catalog: list[dict[str, Any]], title: str = "Katalog Buku") -
         print(f"  {book['id_buku']:<5} | {book['judul']:<46} | {book['kategori']:<18} | {status:<10}")
 
 
+# Cetak tabel daftar peminjaman, keterlambatan, denda, dan statistik ringkas.
 def _print_loans_with_fines(fine_report: dict[str, Any], title: str = "Daftar Peminjaman & Denda") -> None:
     """Cetak tabel peminjaman beserta perhitungan telat, denda, dan ringkasan statistik."""
     print(f"\n[{title}]")
@@ -190,6 +195,7 @@ def _print_loans_with_fines(fine_report: dict[str, Any], title: str = "Daftar Pe
     )
 
 
+# Simulasi otomatis fitur Perpustakaan Mini untuk demo dan pengujian.
 def run_demo() -> dict[str, Any]:
     """Jalankan skenario demo otomatis App 3 untuk verifikasi dan pengujian."""
     print_header("APP 3: PERPUSTAKAAN MINI (Katalog, Peminjaman, Denda)")
@@ -199,7 +205,6 @@ def run_demo() -> dict[str, Any]:
     available_books = filter_by_field(catalog, "tersedia", True)
     _print_catalog(available_books, "Buku Tersedia untuk Dipinjam")
 
-    # Kelompokkan buku per kategori memakai group_by_field.
     grouped_catalog = group_by_field(catalog, "kategori")
     print("\n[Rekap Jumlah Judul per Kategori]")
     for category, items in grouped_catalog.items():
@@ -208,7 +213,6 @@ def run_demo() -> dict[str, Any]:
     search_code = search_by_keyword(catalog, "judul", "code")
     _print_catalog(search_code, "Pencarian Judul: 'code'")
 
-    # Simulasi pinjam B01, kembalikan L01, dan hapus log lama L03 via delete_loan.
     catalog, loans = borrow_book(catalog, loans, "B01", "Nadia", 9)
     catalog, loans = return_book(catalog, loans, "L01", actual_days=10)
     catalog, loans = delete_loan(catalog, loans, "L03")
@@ -224,6 +228,7 @@ def run_demo() -> dict[str, Any]:
     }
 
 
+# Jalankan menu CLI interaktif Perpustakaan Mini.
 def run_cli() -> None:
     """Jalankan antarmuka terminal interaktif untuk Perpustakaan Mini."""
     state: dict[str, Any] = {
@@ -231,6 +236,7 @@ def run_cli() -> None:
         "loans": list(INITIAL_LOANS),
     }
 
+    # Menu 1: Tampilkan semua buku dan jumlah judul per kategori (group_by_field).
     def show_catalog() -> None:
         _print_catalog(state["catalog"])
         grouped = group_by_field(state["catalog"], "kategori")
@@ -238,6 +244,7 @@ def run_cli() -> None:
         for category, items in grouped.items():
             print(f"   - {category}: {len(items)} buku")
 
+    # Menu 2: Saring buku yang tersedia (filter_by_field) atau cari judul buku (search_by_keyword).
     def filter_available_or_search() -> None:
         print("  1. Tampilkan Buku Tersedia  2. Cari Judul Buku")
         mode = prompt_int("Pilih mode", min_value=1, max_value=2)
@@ -249,6 +256,7 @@ def run_cli() -> None:
             results = search_by_keyword(state["catalog"], "judul", keyword)
             _print_catalog(results, f"Hasil Cari '{keyword}'")
 
+    # Menu 3: Tampilkan buku tersedia lalu catat peminjaman baru via borrow_book.
     def borrow_action() -> None:
         available = filter_by_field(state["catalog"], "tersedia", True)
         _print_catalog(available, "Buku Tersedia")
@@ -266,6 +274,7 @@ def run_cli() -> None:
         except ValueError as err:
             print(f"Gagal: {err}")
 
+    # Menu 4: Tampilkan pinjaman aktif lalu proses pengembalian dan denda via return_book.
     def return_action() -> None:
         active_loans = filter_by_field(state["loans"], "status", "Dipinjam")
         _print_loans_with_fines(calculate_fines(active_loans), "Pinjaman Aktif")
@@ -282,6 +291,7 @@ def run_cli() -> None:
         except ValueError as err:
             print(f"Gagal: {err}")
 
+    # Menu 5: Hapus log peminjaman via delete_loan dan pulihkan stok bila pinjaman masih aktif.
     def delete_loan_action() -> None:
         _print_loans_with_fines(calculate_fines(state["loans"]))
         if not state["loans"]:
@@ -296,9 +306,11 @@ def run_cli() -> None:
         except ValueError as err:
             print(f"Gagal: {err}")
 
+    # Menu 6: Tampilkan laporan seluruh peminjaman beserta kalkulasi denda.
     def show_fines_action() -> None:
         _print_loans_with_fines(calculate_fines(state["loans"]))
 
+    # Menu 7: Tambahkan buku baru ke katalog perpustakaan via add_book.
     def add_book_action() -> None:
         judul = prompt_non_empty("Judul buku baru")
         penulis = prompt_non_empty("Nama penulis")
