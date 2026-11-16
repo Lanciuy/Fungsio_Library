@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from functools import reduce
 from typing import Any, Callable
 
 Record = dict[str, Any]
@@ -80,14 +79,13 @@ def update_by_id(
     if not isinstance(updates, dict):
         raise TypeError("updates must be a dict")
 
-    updated_collection: Collection = []
-    for item in collection:
-        copied_item = deepcopy(item)
-        # Gabungkan salinan lama + updates hanya pada record yang ID-nya cocok.
-        if id_field in copied_item and copied_item[id_field] == target_id:
-            copied_item = {**copied_item, **deepcopy(updates)}
-        updated_collection.append(copied_item)
-    return updated_collection
+    # Gabungkan salinan lama + updates hanya pada record yang ID-nya cocok.
+    return [
+        {**deepcopy(item), **deepcopy(updates)}
+        if id_field in item and item[id_field] == target_id
+        else deepcopy(item)
+        for item in collection
+    ]
 
 
 def remove_by_id(collection: Collection, id_field: str, target_id: Any) -> Collection:
@@ -123,19 +121,18 @@ def transform_records(
 
 
 def sum_by_field(collection: Collection, numeric_field: str) -> float:
-    """[Fungsi 7] Jumlahkan nilai numerik pada satu field menggunakan reduce."""
+    """[Fungsi 7] Jumlahkan nilai numerik pada satu field (field None dianggap 0)."""
     _validate_collection(collection)
     if not isinstance(numeric_field, str) or not numeric_field:
         raise ValueError("numeric_field must be a non-empty string")
 
-    def _accumulate(total: float, item: Record) -> float:
-        # Field kosong/None diperlakukan 0.0 agar agregasi data parsial tetap aman.
-        raw_value = item.get(numeric_field, 0.0)
-        if raw_value is None:
-            return total
-        return total + _to_numeric(raw_value, numeric_field)
-
-    return float(reduce(_accumulate, collection, 0.0))
+    return float(
+        sum(
+            _to_numeric(item[numeric_field], numeric_field)
+            for item in collection
+            if item.get(numeric_field) is not None
+        )
+    )
 
 
 def group_by_field(collection: Collection, key_field: str) -> dict[Any, Collection]:
@@ -148,9 +145,7 @@ def group_by_field(collection: Collection, key_field: str) -> dict[Any, Collecti
     for item in collection:
         group_key = item.get(key_field)
         try:
-            if group_key not in grouped:
-                grouped[group_key] = []
-            grouped[group_key].append(deepcopy(item))
+            grouped.setdefault(group_key, []).append(deepcopy(item))
         except TypeError as exc:
             # Nilai key harus hashable (seperti str/int) agar bisa jadi key dictionary.
             raise TypeError(f"Group key '{group_key}' for field '{key_field}' must be hashable") from exc
@@ -167,14 +162,9 @@ def sort_records(
     if not isinstance(sort_field, str) or not sort_field:
         raise ValueError("sort_field must be a non-empty string")
 
-    def _sort_key(item: Record) -> Any:
-        # Nilai None diganti 0 agar perbandingan sort tidak memicu TypeError.
-        val = item.get(sort_field)
-        return 0 if val is None else val
-
     sorted_items = sorted(
         (deepcopy(item) for item in collection),
-        key=_sort_key,
+        key=lambda item: 0 if item.get(sort_field) is None else item.get(sort_field),
         reverse=descending,
     )
     return [
@@ -197,13 +187,7 @@ def calculate_summary_stats(collection: Collection, numeric_field: str) -> dict[
 
     # Kembalikan nol semua saat koleksi kosong agar pemanggil terhindar dari ZeroDivisionError.
     if not values:
-        return {
-            "count": 0.0,
-            "total": 0.0,
-            "average": 0.0,
-            "min": 0.0,
-            "max": 0.0,
-        }
+        return dict.fromkeys(("count", "total", "average", "min", "max"), 0.0)
 
     total = float(sum(values))
     count = float(len(values))

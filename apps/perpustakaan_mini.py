@@ -231,15 +231,14 @@ def run_cli() -> None:
         "loans": list(INITIAL_LOANS),
     }
 
-    def show_catalog() -> bool:
+    def show_catalog() -> None:
         _print_catalog(state["catalog"])
         grouped = group_by_field(state["catalog"], "kategori")
         print("\n  Ringkasan per Kategori:")
         for category, items in grouped.items():
             print(f"   - {category}: {len(items)} buku")
-        return True
 
-    def filter_available_or_search() -> bool:
+    def filter_available_or_search() -> None:
         print("  1. Tampilkan Buku Tersedia  2. Cari Judul Buku")
         mode = prompt_int("Pilih mode", min_value=1, max_value=2)
         if mode == 1:
@@ -249,13 +248,12 @@ def run_cli() -> None:
             keyword = prompt_non_empty("Kata kunci judul buku")
             results = search_by_keyword(state["catalog"], "judul", keyword)
             _print_catalog(results, f"Hasil Cari '{keyword}'")
-        return True
 
-    def borrow_action() -> bool:
+    def borrow_action() -> None:
         available = filter_by_field(state["catalog"], "tersedia", True)
         _print_catalog(available, "Buku Tersedia")
         if not available:
-            return True
+            return
         id_buku = prompt_non_empty("ID Buku yang dipinjam").upper()
         peminjam = prompt_non_empty("Nama peminjam")
         durasi = prompt_int("Durasi pinjam (hari)", min_value=1)
@@ -267,13 +265,12 @@ def run_cli() -> None:
             _print_loans_with_fines(calculate_fines(state["loans"]))
         except ValueError as err:
             print(f"Gagal: {err}")
-        return True
 
-    def return_action() -> bool:
+    def return_action() -> None:
         active_loans = filter_by_field(state["loans"], "status", "Dipinjam")
         _print_loans_with_fines(calculate_fines(active_loans), "Pinjaman Aktif")
         if not active_loans:
-            return True
+            return
         id_pinjam = prompt_non_empty("ID Pinjam yang dikembalikan").upper()
         hari = prompt_int("Total hari pinjam aktual", min_value=1)
         try:
@@ -284,12 +281,11 @@ def run_cli() -> None:
             _print_loans_with_fines(calculate_fines(state["loans"]))
         except ValueError as err:
             print(f"Gagal: {err}")
-        return True
 
-    def delete_loan_action() -> bool:
+    def delete_loan_action() -> None:
         _print_loans_with_fines(calculate_fines(state["loans"]))
         if not state["loans"]:
-            return True
+            return
         id_pinjam = prompt_non_empty("ID Pinjam yang ingin dihapus").upper()
         try:
             state["catalog"], state["loans"] = delete_loan(
@@ -299,20 +295,17 @@ def run_cli() -> None:
             _print_loans_with_fines(calculate_fines(state["loans"]))
         except ValueError as err:
             print(f"Gagal: {err}")
-        return True
 
-    def show_fines_action() -> bool:
+    def show_fines_action() -> None:
         _print_loans_with_fines(calculate_fines(state["loans"]))
-        return True
 
-    def add_book_action() -> bool:
+    def add_book_action() -> None:
         judul = prompt_non_empty("Judul buku baru")
         penulis = prompt_non_empty("Nama penulis")
         kategori = prompt_non_empty("Kategori buku")
         state["catalog"] = add_book(state["catalog"], judul, penulis, kategori)
         print("Buku baru berhasil ditambahkan ke katalog.")
         _print_catalog(state["catalog"])
-        return True
 
     run_menu_loop(
         "PERPUSTAKAAN MINI INTERAKTIF",

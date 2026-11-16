@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import ast
 import io
 import unittest
 from contextlib import redirect_stdout
-from pathlib import Path
 
 import fungsio_lib
+from main import inspect_library_usage
 from apps import (
     kasir_kantin,
     keuangan_pribadi,
@@ -224,29 +223,7 @@ class TestApplicationsAndMatrixCompliance(unittest.TestCase):
     def test_ten_functions_used_in_at_least_three_apps(self) -> None:
         """Audit AST untuk menjamin tiap dari 10 fungsi dipakai di minimal 3 aplikasi berbeda."""
         self.assertEqual(len(fungsio_lib.__all__), 10)
-        apps_dir = Path(__file__).resolve().parent.parent / "apps"
-        app_files = [
-            "kasir_kantin.py",
-            "presensi_kelas.py",
-            "perpustakaan_mini.py",
-            "keuangan_pribadi.py",
-            "nilai_mahasiswa.py",
-        ]
-
-        usage_map: dict[str, set[str]] = {fn: set() for fn in fungsio_lib.__all__}
-        for filename in app_files:
-            file_path = apps_dir / filename
-            tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Call):
-                    called = None
-                    if isinstance(node.func, ast.Name):
-                        called = node.func.id
-                    elif isinstance(node.func, ast.Attribute):
-                        called = node.func.attr
-                    if called in usage_map:
-                        usage_map[called].add(filename)
-
+        usage_map = inspect_library_usage()
         for fn_name, app_set in usage_map.items():
             with self.subTest(function=fn_name):
                 self.assertGreaterEqual(

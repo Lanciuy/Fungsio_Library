@@ -61,11 +61,7 @@ def add_menu_item(
 
 
 def _resolve_cart_id(cart: list[dict[str, Any]], raw_identifier: str) -> str | None:
-    """Cocokkan input user ke ID menu di keranjang via ID, nomor baris struk, atau nama.
-
-    Menyelesaikan bug saat user memasukkan nomor urut baris (1, 2) atau huruf kecil
-    sehingga pembaruan qty dan penghapusan item selalu tepat sasaran.
-    """
+    """Cocokkan input user ke ID menu di keranjang via ID, nomor baris struk, atau nama."""
     cleaned = raw_identifier.strip()
     if not cleaned:
         return None
@@ -81,12 +77,8 @@ def _resolve_cart_id(cart: list[dict[str, Any]], raw_identifier: str) -> str | N
         if 1 <= row_num <= len(ordered_items):
             return str(ordered_items[row_num - 1]["id_menu"])
 
-    # Cocokkan nama menu persis (case-insensitive).
     lowered = cleaned.lower()
-    for item in cart:
-        if str(item["nama"]).lower() == lowered:
-            return str(item["id_menu"])
-    return None
+    return next((str(i["id_menu"]) for i in cart if str(i["nama"]).lower() == lowered), None)
 
 
 def add_to_cart(
@@ -267,7 +259,7 @@ def run_cli() -> None:
             )
         _print_receipt(compute_checkout(state["cart"]))
 
-    def show_menu() -> bool:
+    def show_menu() -> None:
         sorted_menu = sort_records(state["menu"], "harga", descending=False)
         _print_menu_table(sorted_menu)
         stats = calculate_summary_stats(state["menu"], "harga")
@@ -275,9 +267,8 @@ def run_cli() -> None:
             f"  Rata-rata harga: {format_idr(stats['average'])} "
             f"(Min: {format_idr(stats['min'])}, Max: {format_idr(stats['max'])})"
         )
-        return True
 
-    def filter_and_search() -> bool:
+    def filter_and_search() -> None:
         print("  1. Filter Kategori  2. Cari Nama Menu")
         mode = prompt_int("Pilih mode", min_value=1, max_value=2)
         if mode == 1:
@@ -288,9 +279,8 @@ def run_cli() -> None:
             keyword = prompt_non_empty("Masukkan kata kunci nama menu")
             results = search_by_keyword(state["menu"], "nama", keyword)
             _print_menu_table(results, f"Hasil Cari '{keyword}'")
-        return True
 
-    def add_cart_item() -> bool:
+    def add_cart_item() -> None:
         _print_menu_table(state["menu"])
         id_menu = prompt_non_empty("Masukkan ID Menu (misal M01)").upper()
         qty = prompt_int("Masukkan jumlah (qty)", min_value=1)
@@ -300,13 +290,12 @@ def run_cli() -> None:
             _print_item_qty_feedback(id_menu)
         except ValueError as err:
             print(f"Gagal: {err}")
-        return True
 
-    def edit_cart_item() -> bool:
+    def edit_cart_item() -> None:
         _print_receipt(compute_checkout(state["cart"]))
         if not state["cart"]:
             print("  Gunakan menu 3 untuk menambah item ke keranjang terlebih dahulu.")
-            return True
+            return
 
         raw_target = prompt_non_empty("Masukkan ID Menu atau Nomor Baris (misal M01 atau 1)")
         resolved_id = _resolve_cart_id(state["cart"], raw_target)
@@ -321,9 +310,9 @@ def run_cli() -> None:
                     state["cart"] = add_to_cart(state["menu"], state["cart"], candidate_id, add_qty)
                     print("Item berhasil ditambahkan ke keranjang.")
                     _print_item_qty_feedback(candidate_id)
-                return True
+                return
             print(f"Gagal: Item '{raw_target}' tidak ditemukan di keranjang.")
-            return True
+            return
 
         current_item = filter_by_field(state["cart"], "id_menu", resolved_id)[0]
         print(
@@ -340,27 +329,24 @@ def run_cli() -> None:
 
         print("Keranjang berhasil diperbarui.")
         _print_item_qty_feedback(resolved_id)
-        return True
 
-    def delete_cart_item() -> bool:
+    def delete_cart_item() -> None:
         _print_receipt(compute_checkout(state["cart"]))
         if not state["cart"]:
-            return True
+            return
         raw_target = prompt_non_empty("Masukkan ID Menu atau Nomor Baris yang ingin dihapus")
         resolved_id = _resolve_cart_id(state["cart"], raw_target)
         if not resolved_id:
             print(f"Gagal: Item '{raw_target}' tidak ditemukan di keranjang.")
-            return True
+            return
         state["cart"] = remove_by_id(state["cart"], "id_menu", resolved_id)
         print(f"Item '{resolved_id}' dihapus dari keranjang.")
         _print_receipt(compute_checkout(state["cart"]))
-        return True
 
-    def checkout_action() -> bool:
+    def checkout_action() -> None:
         _print_receipt(compute_checkout(state["cart"]))
-        return True
 
-    def add_menu_action() -> bool:
+    def add_menu_action() -> None:
         nama = prompt_non_empty("Nama menu baru")
         kategori = prompt_non_empty("Kategori (Makanan/Minuman)")
         harga = prompt_float("Harga (Rp)", min_value=500.0)
@@ -370,7 +356,6 @@ def run_cli() -> None:
             _print_menu_table(state["menu"])
         except ValueError as err:
             print(f"Gagal: {err}")
-        return True
 
     run_menu_loop(
         "KASIR KANTIN INTERAKTIF",

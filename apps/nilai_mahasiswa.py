@@ -98,27 +98,22 @@ def delete_student_scores(students: list[dict[str, Any]], nim: str) -> list[dict
 
 def evaluate_class_grades(students: list[dict[str, Any]]) -> dict[str, Any]:
     """Hitung nilai akhir berbobot, huruf mutu, peringkat kelas, dan statistik nilai."""
-    # Hitung nilai akhir berbobot tiap mahasiswa memakai transform_records.
-    computed_scores = transform_records(
+    # Hitung nilai akhir berbobot, grade, dan status kelulusan dalam satu pass transform_records.
+    graded_students = transform_records(
         students,
         lambda s: {
             **s,
-            "nilai_akhir": round(
-                (float(s["tugas"]) * WEIGHT_TUGAS)
-                + (float(s["kuis"]) * WEIGHT_KUIS)
-                + (float(s["uts"]) * WEIGHT_UTS)
-                + (float(s["uas"]) * WEIGHT_UAS),
-                2,
+            "nilai_akhir": (
+                nilai := round(
+                    (float(s["tugas"]) * WEIGHT_TUGAS)
+                    + (float(s["kuis"]) * WEIGHT_KUIS)
+                    + (float(s["uts"]) * WEIGHT_UTS)
+                    + (float(s["uas"]) * WEIGHT_UAS),
+                    2,
+                )
             ),
-        },
-    )
-    # Tentukan grade dan status kelulusan (lulus jika nilai_akhir >= 60).
-    graded_students = transform_records(
-        computed_scores,
-        lambda s: {
-            **s,
-            "grade": _determine_grade(float(s["nilai_akhir"])),
-            "status_lulus": "Lulus" if float(s["nilai_akhir"]) >= 60.0 else "Mengulang",
+            "grade": _determine_grade(nilai),
+            "status_lulus": "Lulus" if nilai >= 60.0 else "Mengulang",
         },
     )
     # Urutkan dari nilai akhir tertinggi sekaligus beri peringkat (rank 1..N) via sort_records.
@@ -200,7 +195,7 @@ def run_cli() -> None:
             )
         _print_rankings(evaluation["rankings"])
 
-    def show_rankings() -> bool:
+    def show_rankings() -> None:
         evaluation = evaluate_class_grades(state["students"])
         _print_rankings(evaluation["rankings"])
         stats = evaluation["class_stats"]
@@ -208,9 +203,8 @@ def run_cli() -> None:
             f"  Rata-rata Kelas: {stats['average']:.2f} | "
             f"Tertinggi: {stats['max']:.2f} | Terendah: {stats['min']:.2f}"
         )
-        return True
 
-    def add_student_action() -> bool:
+    def add_student_action() -> None:
         nim = prompt_non_empty("NIM Mahasiswa")
         nama = prompt_non_empty("Nama Mahasiswa")
         tugas = prompt_float("Nilai Tugas (0-100)", min_value=0.0, max_value=100.0)
@@ -225,17 +219,16 @@ def run_cli() -> None:
             _print_student_feedback(nim.strip())
         except ValueError as err:
             print(f"Gagal: {err}")
-        return True
 
-    def revise_action() -> bool:
+    def revise_action() -> None:
         evaluation = evaluate_class_grades(state["students"])
         _print_rankings(evaluation["rankings"])
         if not state["students"]:
-            return True
+            return
         nim = prompt_non_empty("NIM Mahasiswa yang ingin direvisi")
         if not filter_by_field(state["students"], "nim", nim):
             print(f"Gagal: Mahasiswa dengan NIM '{nim}' tidak ditemukan.")
-            return True
+            return
         print("  Komponen: 1. Tugas  2. Kuis  3. UTS  4. UAS  5. Semua Komponen")
         comp_idx = prompt_int("Pilih komponen", min_value=1, max_value=5)
         if comp_idx == 5:
@@ -254,13 +247,12 @@ def run_cli() -> None:
             _print_student_feedback(nim)
         except ValueError as err:
             print(f"Gagal: {err}")
-        return True
 
-    def delete_student_action() -> bool:
+    def delete_student_action() -> None:
         evaluation = evaluate_class_grades(state["students"])
         _print_rankings(evaluation["rankings"])
         if not state["students"]:
-            return True
+            return
         nim = prompt_non_empty("NIM Mahasiswa yang ingin dihapus")
         try:
             state["students"] = delete_student_scores(state["students"], nim)
@@ -268,9 +260,8 @@ def run_cli() -> None:
             _print_rankings(evaluate_class_grades(state["students"])["rankings"])
         except ValueError as err:
             print(f"Gagal: {err}")
-        return True
 
-    def filter_and_search_action() -> bool:
+    def filter_and_search_action() -> None:
         evaluation = evaluate_class_grades(state["students"])
         print("  1. Filter Status Lulus/Mengulang  2. Cari Nama Mahasiswa")
         mode = prompt_int("Pilih mode", min_value=1, max_value=2)
@@ -282,16 +273,14 @@ def run_cli() -> None:
             keyword = prompt_non_empty("Kata kunci nama mahasiswa")
             results = search_by_keyword(evaluation["rankings"], "nama", keyword)
             _print_rankings(results, f"Hasil Cari '{keyword}'")
-        return True
 
-    def distribution_action() -> bool:
+    def distribution_action() -> None:
         evaluation = evaluate_class_grades(state["students"])
         print("\n[Distribusi Grade Mahasiswa]")
         for grade in sorted(evaluation["grade_distribution"].keys()):
             members = evaluation["grade_distribution"][grade]
             names = ", ".join(m["nama"] for m in members)
             print(f"  Grade {grade} ({len(members)}): {names}")
-        return True
 
     run_menu_loop(
         "NILAI MAHASISWA INTERAKTIF",

@@ -218,12 +218,11 @@ def run_cli() -> None:
     """Jalankan antarmuka terminal interaktif untuk Keuangan Pribadi."""
     state: dict[str, Any] = {"transactions": list(INITIAL_TRANSACTIONS)}
 
-    def show_all() -> bool:
+    def show_all() -> None:
         _print_transactions(state["transactions"])
         _print_balance_summary(analyze_finances(state["transactions"]))
-        return True
 
-    def add_action() -> bool:
+    def add_action() -> None:
         tanggal = prompt_non_empty("Tanggal (YYYY-MM-DD)")
         tipe = prompt_non_empty("Tipe (Pemasukan/Pengeluaran)")
         kategori = prompt_non_empty("Kategori (misal Makan, Gaji, Transportasi)")
@@ -237,22 +236,20 @@ def run_cli() -> None:
             _print_balance_summary(analyze_finances(state["transactions"]))
         except ValueError as err:
             print(f"Gagal: {err}")
-        return True
 
-    def edit_action() -> bool:
+    def edit_action() -> None:
         _print_transactions(state["transactions"])
         if not state["transactions"]:
-            return True
+            return
         id_trx = prompt_non_empty("ID Transaksi yang ingin diubah").upper()
         if not filter_by_field(state["transactions"], "id_trx", id_trx):
             print(f"Gagal: ID Transaksi '{id_trx}' tidak ditemukan.")
-            return True
+            return
         print("  Field: 1. Tipe  2. Kategori  3. Keterangan  4. Nominal")
         field_choice = prompt_int("Pilih field yang diubah", min_value=1, max_value=4)
         try:
             if field_choice == 1:
-                new_val: Any = prompt_non_empty("Tipe baru (Pemasukan/Pengeluaran)")
-                updates = {"tipe": new_val}
+                updates: dict[str, Any] = {"tipe": prompt_non_empty("Tipe baru (Pemasukan/Pengeluaran)")}
             elif field_choice == 2:
                 updates = {"kategori": prompt_non_empty("Kategori baru")}
             elif field_choice == 3:
@@ -264,9 +261,8 @@ def run_cli() -> None:
             _print_balance_summary(analyze_finances(state["transactions"]))
         except ValueError as err:
             print(f"Gagal: {err}")
-        return True
 
-    def filter_and_search_action() -> bool:
+    def filter_and_search_action() -> None:
         print("  1. Filter Tipe (Pemasukan/Pengeluaran)  2. Filter Kategori  3. Cari Keterangan")
         mode = prompt_int("Pilih mode", min_value=1, max_value=3)
         try:
@@ -284,12 +280,11 @@ def run_cli() -> None:
                 _print_transactions(matched, f"Hasil Cari '{keyword}'")
         except ValueError as err:
             print(f"Gagal: {err}")
-        return True
 
-    def remove_action() -> bool:
+    def remove_action() -> None:
         _print_transactions(state["transactions"])
         if not state["transactions"]:
-            return True
+            return
         id_trx = prompt_non_empty("ID Transaksi yang ingin dihapus").upper()
         try:
             state["transactions"] = delete_transaction(state["transactions"], id_trx)
@@ -297,12 +292,10 @@ def run_cli() -> None:
             _print_balance_summary(analyze_finances(state["transactions"]))
         except ValueError as err:
             print(f"Gagal: {err}")
-        return True
 
-    def report_action() -> bool:
+    def report_action() -> None:
         report = analyze_finances(state["transactions"])
         _print_financial_report(report)
-        return True
 
     run_menu_loop(
         "KEUANGAN PRIBADI INTERAKTIF",

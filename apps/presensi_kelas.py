@@ -120,21 +120,17 @@ def build_student_recaps(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
 
-    # Hitung persentase kehadiran dan tentukan status kelayakan UAS (>= 75%).
-    enriched_recaps = transform_records(
+    # Hitung persentase kehadiran dan tentukan status kelayakan UAS (>= 75%) dalam satu pass.
+    final_recaps = transform_records(
         raw_recaps,
         lambda rec: {
             **rec,
-            "persentase": round((rec["total_poin"] / rec["total_pertemuan"]) * 100, 1)
-            if rec["total_pertemuan"] > 0
-            else 0.0,
-        },
-    )
-    final_recaps = transform_records(
-        enriched_recaps,
-        lambda rec: {
-            **rec,
-            "kelayakan_uas": "Layak UAS" if rec["persentase"] >= MIN_UAS_PERCENTAGE else "Tidak Layak",
+            "persentase": (
+                pct := round((rec["total_poin"] / rec["total_pertemuan"]) * 100, 1)
+                if rec["total_pertemuan"] > 0
+                else 0.0
+            ),
+            "kelayakan_uas": "Layak UAS" if pct >= MIN_UAS_PERCENTAGE else "Tidak Layak",
         },
     )
     # Urutkan mahasiswa dari persentase kehadiran tertinggi via sort_records.
@@ -204,11 +200,10 @@ def run_cli() -> None:
     """Jalankan antarmuka terminal interaktif untuk Presensi Kelas."""
     state: dict[str, Any] = {"logs": list(INITIAL_LOGS)}
 
-    def show_all_logs() -> bool:
+    def show_all_logs() -> None:
         _print_logs(state["logs"])
-        return True
 
-    def add_log_action() -> bool:
+    def add_log_action() -> None:
         nim = prompt_non_empty("NIM Mahasiswa")
         existing_student = filter_by_field(state["logs"], "nim", nim)
         if existing_student:
@@ -225,15 +220,14 @@ def run_cli() -> None:
             _print_recaps(student_recap, f"Rekap Terbaru NIM {nim}")
         except ValueError as err:
             print(f"Gagal: {err}")
-        return True
 
-    def update_log_action() -> bool:
+    def update_log_action() -> None:
         _print_logs(state["logs"])
         id_log = prompt_non_empty("Masukkan ID Log (misal P07)").upper()
         matched = filter_by_field(state["logs"], "id_log", id_log)
         if not matched:
             print(f"Gagal: ID Log '{id_log}' tidak ditemukan.")
-            return True
+            return
         status = prompt_non_empty("Status baru (Hadir/Izin/Sakit/Alfa)")
         try:
             clean_status = _normalize_status(status)
@@ -243,9 +237,8 @@ def run_cli() -> None:
             _print_recaps(filter_by_field(build_student_recaps(state["logs"]), "nim", nim), f"Rekap Terbaru NIM {nim}")
         except ValueError as err:
             print(f"Gagal: {err}")
-        return True
 
-    def delete_log_action() -> bool:
+    def delete_log_action() -> None:
         _print_logs(state["logs"])
         id_log = prompt_non_empty("Masukkan ID Log yang ingin dihapus").upper()
         try:
@@ -254,9 +247,8 @@ def run_cli() -> None:
             _print_recaps(build_student_recaps(state["logs"]))
         except ValueError as err:
             print(f"Gagal: {err}")
-        return True
 
-    def filter_logs_action() -> bool:
+    def filter_logs_action() -> None:
         status = prompt_non_empty("Filter status (Hadir/Izin/Sakit/Alfa)")
         try:
             clean_status = _normalize_status(status)
@@ -264,19 +256,16 @@ def run_cli() -> None:
             _print_logs(filtered, f"Log Status: {clean_status}")
         except ValueError as err:
             print(f"Gagal: {err}")
-        return True
 
-    def show_recaps_action() -> bool:
+    def show_recaps_action() -> None:
         recaps = build_student_recaps(state["logs"])
         _print_recaps(recaps)
-        return True
 
-    def search_recap_action() -> bool:
+    def search_recap_action() -> None:
         keyword = prompt_non_empty("Masukkan kata kunci nama mahasiswa")
         recaps = build_student_recaps(state["logs"])
         matches = search_by_keyword(recaps, "nama", keyword)
         _print_recaps(matches, f"Hasil Cari '{keyword}'")
-        return True
 
     run_menu_loop(
         "PRESENSI KELAS INTERAKTIF",
