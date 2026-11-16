@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps import print_header, prompt_int, prompt_non_empty, run_menu_loop
+from apps import next_prefixed_id, print_header, prompt_int, prompt_non_empty, run_menu_loop
 from fungsio_lib import (
     add_record,
     filter_by_field,
     group_by_field,
+    remove_by_id,
     search_by_keyword,
     sort_records,
     sum_by_field,
@@ -55,17 +56,40 @@ def record_attendance(
     pertemuan: int,
     status: str,
 ) -> list[dict[str, Any]]:
-    """Catat entri presensi baru secara immutable via add_record."""
+    """Catat presensi baru atau perbarui otomatis jika (NIM, pertemuan) sudah tercatat."""
+    clean_nim = nim.strip()
+    if not clean_nim:
+        raise ValueError("NIM tidak boleh kosong")
+    if pertemuan <= 0:
+        raise ValueError("Pertemuan harus lebih dari 0")
+
     clean_status = _normalize_status(status)
-    next_id = f"P{len(logs) + 1:02d}"
+    existing_student = filter_by_field(logs, "nim", clean_nim)
+    resolved_name = existing_student[0]["nama"] if existing_student else nama.strip()
+    if not resolved_name:
+        raise ValueError("Nama mahasiswa tidak boleh kosong")
+
+    # Cegah duplikasi (nim, pertemuan): perbarui status log yang ada via update_by_id.
+    existing_meeting = filter_by_field(existing_student, "pertemuan", pertemuan)
+    if existing_meeting:
+        return update_by_id(logs, "id_log", existing_meeting[0]["id_log"], {"status": clean_status})
+
     entry = {
-        "id_log": next_id,
-        "nim": nim.strip(),
-        "nama": nama.strip(),
+        "id_log": next_prefixed_id(logs, "id_log", "P"),
+        "nim": clean_nim,
+        "nama": resolved_name,
         "pertemuan": pertemuan,
         "status": clean_status,
     }
     return add_record(logs, entry)
+
+
+def delete_attendance_log(logs: list[dict[str, Any]], id_log: str) -> list[dict[str, Any]]:
+    """Hapus log presensi berdasarkan ID setelah memvalidasi keberadaannya."""
+    clean_id = id_log.strip().upper()
+    if not filter_by_field(logs, "id_log", clean_id):
+        raise ValueError(f"ID Log '{id_log}' tidak ditemukan")
+    return remove_by_id(logs, "id_log", clean_id)
 
 
 def build_student_recaps(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -186,12 +210,19 @@ def run_cli() -> None:
 
     def add_log_action() -> bool:
         nim = prompt_non_empty("NIM Mahasiswa")
-        nama = prompt_non_empty("Nama Mahasiswa")
+        existing_student = filter_by_field(state["logs"], "nim", nim)
+        if existing_student:
+            nama = str(existing_student[0]["nama"])
+            print(f"  Mahasiswa ditemukan: {nama} (NIM: {nim})")
+        else:
+            nama = prompt_non_empty("Nama Mahasiswa")
         pertemuan = prompt_int("Pertemuan ke-", min_value=1, max_value=16)
         status = prompt_non_empty("Status (Hadir/Izin/Sakit/Alfa)")
         try:
             state["logs"] = record_attendance(state["logs"], nim, nama, pertemuan, status)
-            print("Presensi berhasil dicatat.")
+            print("Presensi berhasil dicatat/diperbarui.")
+            student_recap = filter_by_field(build_student_recaps(state["logs"]), "nim", nim)
+            _print_recaps(student_recap, f"Rekap Terbaru NIM {nim}")
         except ValueError as err:
             print(f"Gagal: {err}")
         return True
@@ -199,11 +230,28 @@ def run_cli() -> None:
     def update_log_action() -> bool:
         _print_logs(state["logs"])
         id_log = prompt_non_empty("Masukkan ID Log (misal P07)").upper()
+        matched = filter_by_field(state["logs"], "id_log", id_log)
+        if not matched:
+            print(f"Gagal: ID Log '{id_log}' tidak ditemukan.")
+            return True
         status = prompt_non_empty("Status baru (Hadir/Izin/Sakit/Alfa)")
         try:
             clean_status = _normalize_status(status)
             state["logs"] = update_by_id(state["logs"], "id_log", id_log, {"status": clean_status})
-            print("Status presensi diperbarui jika ID ditemukan.")
+            print(f"Log '{id_log}' diperbarui ke status '{clean_status}'.")
+            nim = str(matched[0]["nim"])
+            _print_recaps(filter_by_field(build_student_recaps(state["logs"]), "nim", nim), f"Rekap Terbaru NIM {nim}")
+        except ValueError as err:
+            print(f"Gagal: {err}")
+        return True
+
+    def delete_log_action() -> bool:
+        _print_logs(state["logs"])
+        id_log = prompt_non_empty("Masukkan ID Log yang ingin dihapus").upper()
+        try:
+            state["logs"] = delete_attendance_log(state["logs"], id_log)
+            print(f"Log '{id_log}' berhasil dihapus.")
+            _print_recaps(build_student_recaps(state["logs"]))
         except ValueError as err:
             print(f"Gagal: {err}")
         return True
@@ -236,6 +284,7 @@ def run_cli() -> None:
             ("Lihat Semua Log Kehadiran", show_all_logs),
             ("Catat Kehadiran Baru", add_log_action),
             ("Koreksi Status Kehadiran", update_log_action),
+            ("Hapus Log Kehadiran", delete_log_action),
             ("Filter Log Berdasarkan Status", filter_logs_action),
             ("Lihat Rekap Kehadiran per Mahasiswa", show_recaps_action),
             ("Cari Rekap Mahasiswa", search_recap_action),

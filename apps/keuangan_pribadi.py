@@ -2,16 +2,26 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps import format_idr, print_header, prompt_float, prompt_non_empty, run_menu_loop
+from apps import (
+    format_idr,
+    next_prefixed_id,
+    print_header,
+    prompt_float,
+    prompt_int,
+    prompt_non_empty,
+    run_menu_loop,
+)
 from fungsio_lib import (
     add_record,
     calculate_summary_stats,
     filter_by_field,
     group_by_field,
     remove_by_id,
+    search_by_keyword,
     sort_records,
     sum_by_field,
     transform_records,
+    update_by_id,
 )
 
 INITIAL_TRANSACTIONS: list[dict[str, Any]] = [
@@ -44,9 +54,8 @@ def add_transaction(
     if nominal <= 0:
         raise ValueError("Nominal harus lebih besar dari 0")
     clean_type = _normalize_type(tipe)
-    next_id = f"T{len(transactions) + 1:02d}"
     entry = {
-        "id_trx": next_id,
+        "id_trx": next_prefixed_id(transactions, "id_trx", "T"),
         "tanggal": tanggal.strip(),
         "tipe": clean_type,
         "kategori": kategori.strip().title(),
@@ -54,6 +63,42 @@ def add_transaction(
         "nominal": float(nominal),
     }
     return add_record(transactions, entry)
+
+
+def update_transaction(
+    transactions: list[dict[str, Any]],
+    id_trx: str,
+    updates: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Perbarui data transaksi berdasarkan ID dengan validasi tipe dan nominal."""
+    clean_id = id_trx.strip().upper()
+    if not filter_by_field(transactions, "id_trx", clean_id):
+        raise ValueError(f"ID Transaksi '{id_trx}' tidak ditemukan")
+
+    clean_updates: dict[str, Any] = {}
+    if "tanggal" in updates:
+        clean_updates["tanggal"] = str(updates["tanggal"]).strip()
+    if "tipe" in updates:
+        clean_updates["tipe"] = _normalize_type(str(updates["tipe"]))
+    if "kategori" in updates:
+        clean_updates["kategori"] = str(updates["kategori"]).strip().title()
+    if "keterangan" in updates:
+        clean_updates["keterangan"] = str(updates["keterangan"]).strip()
+    if "nominal" in updates:
+        val = float(updates["nominal"])
+        if val <= 0:
+            raise ValueError("Nominal harus lebih besar dari 0")
+        clean_updates["nominal"] = val
+
+    return update_by_id(transactions, "id_trx", clean_id, clean_updates)
+
+
+def delete_transaction(transactions: list[dict[str, Any]], id_trx: str) -> list[dict[str, Any]]:
+    """Hapus transaksi berdasarkan ID setelah memvalidasi keberadaannya."""
+    clean_id = id_trx.strip().upper()
+    if not filter_by_field(transactions, "id_trx", clean_id):
+        raise ValueError(f"ID Transaksi '{id_trx}' tidak ditemukan")
+    return remove_by_id(transactions, "id_trx", clean_id)
 
 
 def analyze_finances(transactions: list[dict[str, Any]]) -> dict[str, Any]:
@@ -117,6 +162,15 @@ def _print_transactions(transactions: list[dict[str, Any]], title: str = "Daftar
         )
 
 
+def _print_balance_summary(report: dict[str, Any]) -> None:
+    """Cetak ringkasan cepat pemasukan, pengeluaran, dan saldo bersih."""
+    print(
+        f"  Ringkasan -> Masuk: {format_idr(report['total_pemasukan'])} | "
+        f"Keluar: {format_idr(report['total_pengeluaran'])} | "
+        f"Saldo Bersih: {format_idr(report['saldo_bersih'])}"
+    )
+
+
 def _print_financial_report(report: dict[str, Any]) -> None:
     """Cetak ringkasan saldo bersih, rekap kategori, dan 3 pengeluaran terbesar."""
     print("\n[Ringkasan Keuangan Pribadi]")
@@ -151,8 +205,8 @@ def run_demo() -> dict[str, Any]:
     transactions = INITIAL_TRANSACTIONS
     transactions = add_transaction(transactions, "2026-11-07", "Pengeluaran", "Hiburan", "Nonton bioskop", 75000)
     transactions = add_transaction(transactions, "2026-11-08", "Pengeluaran", "Makan", "Traktir teman", 120000)
-    # Hapus transaksi T02 memakai remove_by_id.
-    transactions = remove_by_id(transactions, "id_trx", "T02")
+    # Hapus transaksi T02 memakai delete_transaction.
+    transactions = delete_transaction(transactions, "T02")
 
     report = analyze_finances(transactions)
     _print_transactions(report["transactions"], "Semua Transaksi Terkini")
@@ -166,6 +220,7 @@ def run_cli() -> None:
 
     def show_all() -> bool:
         _print_transactions(state["transactions"])
+        _print_balance_summary(analyze_finances(state["transactions"]))
         return True
 
     def add_action() -> bool:
@@ -179,25 +234,69 @@ def run_cli() -> None:
                 state["transactions"], tanggal, tipe, kategori, keterangan, nominal
             )
             print("Transaksi berhasil disimpan.")
+            _print_balance_summary(analyze_finances(state["transactions"]))
         except ValueError as err:
             print(f"Gagal: {err}")
         return True
 
-    def filter_type_action() -> bool:
-        tipe = prompt_non_empty("Filter tipe (Pemasukan/Pengeluaran)")
+    def edit_action() -> bool:
+        _print_transactions(state["transactions"])
+        if not state["transactions"]:
+            return True
+        id_trx = prompt_non_empty("ID Transaksi yang ingin diubah").upper()
+        if not filter_by_field(state["transactions"], "id_trx", id_trx):
+            print(f"Gagal: ID Transaksi '{id_trx}' tidak ditemukan.")
+            return True
+        print("  Field: 1. Tipe  2. Kategori  3. Keterangan  4. Nominal")
+        field_choice = prompt_int("Pilih field yang diubah", min_value=1, max_value=4)
         try:
-            clean_type = _normalize_type(tipe)
-            filtered = filter_by_field(state["transactions"], "tipe", clean_type)
-            _print_transactions(filtered, f"Transaksi {clean_type}")
+            if field_choice == 1:
+                new_val: Any = prompt_non_empty("Tipe baru (Pemasukan/Pengeluaran)")
+                updates = {"tipe": new_val}
+            elif field_choice == 2:
+                updates = {"kategori": prompt_non_empty("Kategori baru")}
+            elif field_choice == 3:
+                updates = {"keterangan": prompt_non_empty("Keterangan baru")}
+            else:
+                updates = {"nominal": prompt_float("Nominal baru (Rp)", min_value=1.0)}
+            state["transactions"] = update_transaction(state["transactions"], id_trx, updates)
+            print(f"Transaksi '{id_trx}' berhasil diperbarui.")
+            _print_balance_summary(analyze_finances(state["transactions"]))
+        except ValueError as err:
+            print(f"Gagal: {err}")
+        return True
+
+    def filter_and_search_action() -> bool:
+        print("  1. Filter Tipe (Pemasukan/Pengeluaran)  2. Filter Kategori  3. Cari Keterangan")
+        mode = prompt_int("Pilih mode", min_value=1, max_value=3)
+        try:
+            if mode == 1:
+                clean_type = _normalize_type(prompt_non_empty("Tipe (Pemasukan/Pengeluaran)"))
+                filtered = filter_by_field(state["transactions"], "tipe", clean_type)
+                _print_transactions(filtered, f"Transaksi {clean_type}")
+            elif mode == 2:
+                kategori = prompt_non_empty("Nama kategori").title()
+                filtered = filter_by_field(state["transactions"], "kategori", kategori)
+                _print_transactions(filtered, f"Kategori: {kategori}")
+            else:
+                keyword = prompt_non_empty("Kata kunci keterangan")
+                matched = search_by_keyword(state["transactions"], "keterangan", keyword)
+                _print_transactions(matched, f"Hasil Cari '{keyword}'")
         except ValueError as err:
             print(f"Gagal: {err}")
         return True
 
     def remove_action() -> bool:
         _print_transactions(state["transactions"])
+        if not state["transactions"]:
+            return True
         id_trx = prompt_non_empty("ID Transaksi yang ingin dihapus").upper()
-        state["transactions"] = remove_by_id(state["transactions"], "id_trx", id_trx)
-        print("Transaksi dihapus jika ID ditemukan.")
+        try:
+            state["transactions"] = delete_transaction(state["transactions"], id_trx)
+            print(f"Transaksi '{id_trx}' berhasil dihapus.")
+            _print_balance_summary(analyze_finances(state["transactions"]))
+        except ValueError as err:
+            print(f"Gagal: {err}")
         return True
 
     def report_action() -> bool:
@@ -210,7 +309,8 @@ def run_cli() -> None:
         [
             ("Lihat Semua Transaksi", show_all),
             ("Tambah Pemasukan / Pengeluaran", add_action),
-            ("Filter Berdasarkan Tipe Transaksi", filter_type_action),
+            ("Edit Transaksi", edit_action),
+            ("Filter Tipe/Kategori & Cari Transaksi", filter_and_search_action),
             ("Hapus Transaksi", remove_action),
             ("Lihat Laporan Saldo, Kategori & Statistik", report_action),
         ],

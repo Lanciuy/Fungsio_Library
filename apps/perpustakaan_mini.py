@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps import format_idr, print_header, prompt_int, prompt_non_empty, run_menu_loop
+from apps import format_idr, next_prefixed_id, print_header, prompt_int, prompt_non_empty, run_menu_loop
 from fungsio_lib import (
     add_record,
     calculate_summary_stats,
@@ -34,6 +34,23 @@ INITIAL_LOANS: list[dict[str, Any]] = [
 ]
 
 
+def add_book(
+    catalog: list[dict[str, Any]],
+    judul: str,
+    penulis: str,
+    kategori: str,
+) -> list[dict[str, Any]]:
+    """Tambahkan buku baru ke katalog perpustakaan secara immutable."""
+    entry = {
+        "id_buku": next_prefixed_id(catalog, "id_buku", "B"),
+        "judul": judul.strip(),
+        "penulis": penulis.strip(),
+        "kategori": kategori.strip().title(),
+        "tersedia": True,
+    }
+    return add_record(catalog, entry)
+
+
 def borrow_book(
     catalog: list[dict[str, Any]],
     loans: list[dict[str, Any]],
@@ -45,7 +62,8 @@ def borrow_book(
     if durasi_hari <= 0:
         raise ValueError("Durasi pinjam minimal 1 hari")
 
-    found_books = filter_by_field(catalog, "id_buku", id_buku)
+    clean_id = id_buku.strip().upper()
+    found_books = filter_by_field(catalog, "id_buku", clean_id)
     if not found_books:
         raise ValueError(f"Buku '{id_buku}' tidak ditemukan dalam katalog")
 
@@ -53,9 +71,8 @@ def borrow_book(
     if not book["tersedia"]:
         raise ValueError(f"Buku '{book['judul']}' sedang dipinjam")
 
-    next_loan_id = f"L{len(loans) + 1:02d}"
     new_loan = {
-        "id_pinjam": next_loan_id,
+        "id_pinjam": next_prefixed_id(loans, "id_pinjam", "L"),
         "id_buku": book["id_buku"],
         "judul": book["judul"],
         "peminjam": peminjam.strip(),
@@ -64,7 +81,7 @@ def borrow_book(
     }
     # Tambah transaksi pinjam via add_record, lalu kunci status katalog via update_by_id.
     updated_loans = add_record(loans, new_loan)
-    updated_catalog = update_by_id(catalog, "id_buku", id_buku, {"tersedia": False})
+    updated_catalog = update_by_id(catalog, "id_buku", clean_id, {"tersedia": False})
     return updated_catalog, updated_loans
 
 
@@ -74,18 +91,43 @@ def return_book(
     id_pinjam: str,
     actual_days: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Tandai pinjaman selesai dan pulihkan ketersediaan buku di katalog."""
-    matched_loans = filter_by_field(loans, "id_pinjam", id_pinjam)
+    """Tandai pinjaman aktif selesai dan pulihkan ketersediaan buku di katalog."""
+    clean_id = id_pinjam.strip().upper()
+    matched_loans = filter_by_field(loans, "id_pinjam", clean_id)
     if not matched_loans:
         raise ValueError(f"ID peminjaman '{id_pinjam}' tidak ditemukan")
 
     loan = matched_loans[0]
+    if loan["status"] == "Dikembalikan":
+        raise ValueError(f"Pinjaman '{clean_id}' sudah dikembalikan sebelumnya")
+
     updates: dict[str, Any] = {"status": "Dikembalikan"}
     if actual_days is not None and actual_days > 0:
         updates["durasi_hari"] = actual_days
 
-    updated_loans = update_by_id(loans, "id_pinjam", id_pinjam, updates)
+    updated_loans = update_by_id(loans, "id_pinjam", clean_id, updates)
     updated_catalog = update_by_id(catalog, "id_buku", loan["id_buku"], {"tersedia": True})
+    return updated_catalog, updated_loans
+
+
+def delete_loan(
+    catalog: list[dict[str, Any]],
+    loans: list[dict[str, Any]],
+    id_pinjam: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Hapus log peminjaman dan pulihkan stok buku jika pinjaman masih berstatus Dipinjam."""
+    clean_id = id_pinjam.strip().upper()
+    matched_loans = filter_by_field(loans, "id_pinjam", clean_id)
+    if not matched_loans:
+        raise ValueError(f"ID peminjaman '{id_pinjam}' tidak ditemukan")
+
+    loan = matched_loans[0]
+    updated_loans = remove_by_id(loans, "id_pinjam", clean_id)
+    updated_catalog = (
+        update_by_id(catalog, "id_buku", loan["id_buku"], {"tersedia": True})
+        if loan["status"] == "Dipinjam"
+        else list(catalog)
+    )
     return updated_catalog, updated_loans
 
 
@@ -166,10 +208,10 @@ def run_demo() -> dict[str, Any]:
     search_code = search_by_keyword(catalog, "judul", "code")
     _print_catalog(search_code, "Pencarian Judul: 'code'")
 
-    # Simulasi pinjam B01, kembalikan L01, dan hapus log lama L03 via remove_by_id.
+    # Simulasi pinjam B01, kembalikan L01, dan hapus log lama L03 via delete_loan.
     catalog, loans = borrow_book(catalog, loans, "B01", "Nadia", 9)
     catalog, loans = return_book(catalog, loans, "L01", actual_days=10)
-    loans = remove_by_id(loans, "id_pinjam", "L03")
+    catalog, loans = delete_loan(catalog, loans, "L03")
 
     fine_report = calculate_fines(loans)
     _print_loans_with_fines(fine_report, "Laporan Peminjaman & Denda (Batas 7 Hari, Rp2.000/hari)")
@@ -210,7 +252,10 @@ def run_cli() -> None:
         return True
 
     def borrow_action() -> bool:
-        _print_catalog(filter_by_field(state["catalog"], "tersedia", True), "Buku Tersedia")
+        available = filter_by_field(state["catalog"], "tersedia", True)
+        _print_catalog(available, "Buku Tersedia")
+        if not available:
+            return True
         id_buku = prompt_non_empty("ID Buku yang dipinjam").upper()
         peminjam = prompt_non_empty("Nama peminjam")
         durasi = prompt_int("Durasi pinjam (hari)", min_value=1)
@@ -219,12 +264,16 @@ def run_cli() -> None:
                 state["catalog"], state["loans"], id_buku, peminjam, durasi
             )
             print("Peminjaman berhasil dicatat.")
+            _print_loans_with_fines(calculate_fines(state["loans"]))
         except ValueError as err:
             print(f"Gagal: {err}")
         return True
 
     def return_action() -> bool:
-        _print_loans_with_fines(calculate_fines(state["loans"]))
+        active_loans = filter_by_field(state["loans"], "status", "Dipinjam")
+        _print_loans_with_fines(calculate_fines(active_loans), "Pinjaman Aktif")
+        if not active_loans:
+            return True
         id_pinjam = prompt_non_empty("ID Pinjam yang dikembalikan").upper()
         hari = prompt_int("Total hari pinjam aktual", min_value=1)
         try:
@@ -232,19 +281,37 @@ def run_cli() -> None:
                 state["catalog"], state["loans"], id_pinjam, actual_days=hari
             )
             print("Buku berhasil dikembalikan.")
+            _print_loans_with_fines(calculate_fines(state["loans"]))
         except ValueError as err:
             print(f"Gagal: {err}")
         return True
 
     def delete_loan_action() -> bool:
         _print_loans_with_fines(calculate_fines(state["loans"]))
+        if not state["loans"]:
+            return True
         id_pinjam = prompt_non_empty("ID Pinjam yang ingin dihapus").upper()
-        state["loans"] = remove_by_id(state["loans"], "id_pinjam", id_pinjam)
-        print("Data peminjaman dihapus jika ID ditemukan.")
+        try:
+            state["catalog"], state["loans"] = delete_loan(
+                state["catalog"], state["loans"], id_pinjam
+            )
+            print(f"Data peminjaman '{id_pinjam}' berhasil dihapus.")
+            _print_loans_with_fines(calculate_fines(state["loans"]))
+        except ValueError as err:
+            print(f"Gagal: {err}")
         return True
 
     def show_fines_action() -> bool:
         _print_loans_with_fines(calculate_fines(state["loans"]))
+        return True
+
+    def add_book_action() -> bool:
+        judul = prompt_non_empty("Judul buku baru")
+        penulis = prompt_non_empty("Nama penulis")
+        kategori = prompt_non_empty("Kategori buku")
+        state["catalog"] = add_book(state["catalog"], judul, penulis, kategori)
+        print("Buku baru berhasil ditambahkan ke katalog.")
+        _print_catalog(state["catalog"])
         return True
 
     run_menu_loop(
@@ -256,5 +323,6 @@ def run_cli() -> None:
             ("Kembalikan Buku", return_action),
             ("Hapus Log Peminjaman", delete_loan_action),
             ("Lihat Laporan Peminjaman & Denda", show_fines_action),
+            ("Tambah Buku Baru ke Katalog", add_book_action),
         ],
     )

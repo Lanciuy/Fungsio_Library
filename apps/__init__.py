@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Callable
+import re
+from typing import Any, Callable
 
 
 def format_idr(amount: float) -> str:
@@ -9,6 +10,21 @@ def format_idr(amount: float) -> str:
     sign = "-" if rounded < 0 else ""
     formatted = f"{abs(rounded):,}".replace(",", ".")
     return f"{sign}Rp{formatted}"
+
+
+def next_prefixed_id(collection: list[dict[str, Any]], id_field: str, prefix: str) -> str:
+    """Bangkitkan ID berurutan bebas bentrok (misal M07, P13) berbasis angka maksimum.
+
+    Menghindari duplikasi ID setelah penghapusan record dibanding memakai len() + 1.
+    """
+    max_num = 0
+    pattern = re.compile(rf"^{re.escape(prefix)}(\d+)$", re.IGNORECASE)
+    for item in collection:
+        raw_id = str(item.get(id_field, "")).strip()
+        match = pattern.match(raw_id)
+        if match:
+            max_num = max(max_num, int(match.group(1)))
+    return f"{prefix}{max_num + 1:02d}"
 
 
 def print_header(title: str) -> None:

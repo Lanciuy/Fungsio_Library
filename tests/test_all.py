@@ -10,6 +10,7 @@ import fungsio_lib
 from apps import (
     kasir_kantin,
     keuangan_pribadi,
+    next_prefixed_id,
     nilai_mahasiswa,
     perpustakaan_mini,
     presensi_kelas,
@@ -122,7 +123,7 @@ class TestFungsioLibCore(unittest.TestCase):
 
 
 class TestApplicationsAndMatrixCompliance(unittest.TestCase):
-    """Uji integrasi 5 aplikasi dan kepatuhan syarat minimal 3 aplikasi per fungsi."""
+    """Uji integrasi 5 aplikasi, perbaikan bug, dan kepatuhan syarat >= 3 app per fungsi."""
 
     def test_all_five_app_demos(self) -> None:
         """Verifikasi output kalkulasi bisnis dari kelima demo aplikasi."""
@@ -155,6 +156,70 @@ class TestApplicationsAndMatrixCompliance(unittest.TestCase):
         self.assertEqual(len(nilai_res["rankings"]), 6)
         self.assertEqual(nilai_res["rankings"][0]["nama"], "Citra Lestari")
         self.assertEqual(nilai_res["rankings"][0]["grade"], "A")
+
+    def test_kasir_cart_qty_add_set_and_resolve(self) -> None:
+        """Pastikan tambah/ubah qty keranjang dan resolusi nomor baris/ID bekerja akurat."""
+        menu = kasir_kantin.INITIAL_MENU
+        cart = kasir_kantin.add_to_cart(menu, [], "M01", 2)
+        cart = kasir_kantin.add_to_cart(menu, cart, "m04", 1)
+
+        # Tambah qty lewat mode='add' (2 + 3 = 5).
+        cart = kasir_kantin.update_cart_quantity(cart, "M01", 3, mode="add")
+        m01 = filter_by_field(cart, "id_menu", "M01")[0]
+        self.assertEqual(m01["qty"], 5)
+
+        # Resolve baris 1 (M01 punya subtotal terbesar) dan nama persis (M04).
+        self.assertEqual(kasir_kantin._resolve_cart_id(cart, "1"), "M01")
+        self.assertEqual(kasir_kantin._resolve_cart_id(cart, "es teh manis"), "M04")
+
+        # Set qty ke 0 menghapus item, dan item tak dikenal melempar ValueError.
+        cart = kasir_kantin.update_cart_quantity(cart, "M04", 0, mode="set")
+        self.assertEqual(len(cart), 1)
+        with self.assertRaises(ValueError):
+            kasir_kantin.update_cart_quantity(cart, "M99", 2, mode="set")
+
+        # Tambah menu baru menghasilkan ID M07.
+        updated_menu = kasir_kantin.add_menu_item(menu, "Soto Ayam", "makanan", 16000)
+        self.assertEqual(updated_menu[-1]["id_menu"], "M07")
+
+    def test_next_id_and_app_edge_cases(self) -> None:
+        """Verifikasi perbaikan bug ID bentrok, presensi duplikat, pinjaman aktif, transaksi, & nilai."""
+        # ID generator tidak bentrok setelah record tengah dihapus.
+        records = [{"id": "P01"}, {"id": "P03"}]
+        self.assertEqual(next_prefixed_id(records, "id", "P"), "P04")
+
+        # Presensi: mencatat NIM+pertemuan yang sama memperbarui status tanpa duplikasi.
+        logs = presensi_kelas.record_attendance(presensi_kelas.INITIAL_LOGS, "230101", "", 4, "Hadir")
+        self.assertEqual(len(logs), len(presensi_kelas.INITIAL_LOGS))
+        p04 = filter_by_field(logs, "id_log", "P04")[0]
+        self.assertEqual(p04["status"], "Hadir")
+        logs_after_del = presensi_kelas.delete_attendance_log(logs, "P04")
+        self.assertEqual(len(logs_after_del), len(logs) - 1)
+
+        # Perpustakaan: kembalikan pinjaman selesai ditolak; hapus pinjaman aktif memulihkan stok buku.
+        with self.assertRaises(ValueError):
+            perpustakaan_mini.return_book(
+                perpustakaan_mini.INITIAL_CATALOG, perpustakaan_mini.INITIAL_LOANS, "L03"
+            )
+        cat_restored, loans_left = perpustakaan_mini.delete_loan(
+            perpustakaan_mini.INITIAL_CATALOG, perpustakaan_mini.INITIAL_LOANS, "L01"
+        )
+        self.assertTrue(filter_by_field(cat_restored, "id_buku", "B02")[0]["tersedia"])
+        self.assertEqual(len(loans_left), 2)
+
+        # Keuangan: update_transaction & delete_transaction bekerja dan memvalidasi ID.
+        trx = keuangan_pribadi.update_transaction(
+            keuangan_pribadi.INITIAL_TRANSACTIONS, "T02", {"nominal": 50000}
+        )
+        self.assertEqual(filter_by_field(trx, "id_trx", "T02")[0]["nominal"], 50000.0)
+        trx = keuangan_pribadi.delete_transaction(trx, "T02")
+        self.assertEqual(len(trx), 5)
+
+        # Nilai: delete_student_scores membuang data mahasiswa sesuai NIM.
+        remaining_students = nilai_mahasiswa.delete_student_scores(
+            nilai_mahasiswa.INITIAL_STUDENTS, "230104"
+        )
+        self.assertEqual(len(remaining_students), 4)
 
     def test_ten_functions_used_in_at_least_three_apps(self) -> None:
         """Audit AST untuk menjamin tiap dari 10 fungsi dipakai di minimal 3 aplikasi berbeda."""

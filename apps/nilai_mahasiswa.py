@@ -8,6 +8,7 @@ from fungsio_lib import (
     calculate_summary_stats,
     filter_by_field,
     group_by_field,
+    remove_by_id,
     search_by_keyword,
     sort_records,
     transform_records,
@@ -59,11 +60,12 @@ def add_student_scores(
     uas: float,
 ) -> list[dict[str, Any]]:
     """Tambah data nilai mahasiswa baru setelah validasi duplikasi NIM."""
-    if filter_by_field(students, "nim", nim.strip()):
-        raise ValueError(f"Mahasiswa dengan NIM '{nim}' sudah terdaftar")
+    clean_nim = nim.strip()
+    if filter_by_field(students, "nim", clean_nim):
+        raise ValueError(f"Mahasiswa dengan NIM '{clean_nim}' sudah terdaftar")
 
     entry = {
-        "nim": nim.strip(),
+        "nim": clean_nim,
         "nama": nama.strip(),
         "tugas": _validate_score(tugas, "Tugas"),
         "kuis": _validate_score(kuis, "Kuis"),
@@ -79,10 +81,19 @@ def revise_student_scores(
     updates: dict[str, float],
 ) -> list[dict[str, Any]]:
     """Revisi satu atau lebih komponen nilai mahasiswa berdasarkan NIM."""
-    if not filter_by_field(students, "nim", nim.strip()):
-        raise ValueError(f"Mahasiswa dengan NIM '{nim}' tidak ditemukan")
+    clean_nim = nim.strip()
+    if not filter_by_field(students, "nim", clean_nim):
+        raise ValueError(f"Mahasiswa dengan NIM '{clean_nim}' tidak ditemukan")
     validated = {key: _validate_score(val, key.upper()) for key, val in updates.items()}
-    return update_by_id(students, "nim", nim.strip(), validated)
+    return update_by_id(students, "nim", clean_nim, validated)
+
+
+def delete_student_scores(students: list[dict[str, Any]], nim: str) -> list[dict[str, Any]]:
+    """Hapus data nilai mahasiswa berdasarkan NIM setelah validasi keberadaan data."""
+    clean_nim = nim.strip()
+    if not filter_by_field(students, "nim", clean_nim):
+        raise ValueError(f"Mahasiswa dengan NIM '{clean_nim}' tidak ditemukan")
+    return remove_by_id(students, "nim", clean_nim)
 
 
 def evaluate_class_grades(students: list[dict[str, Any]]) -> dict[str, Any]:
@@ -178,6 +189,17 @@ def run_cli() -> None:
     """Jalankan antarmuka terminal interaktif untuk Nilai Mahasiswa."""
     state: dict[str, Any] = {"students": list(INITIAL_STUDENTS)}
 
+    def _print_student_feedback(nim: str) -> None:
+        evaluation = evaluate_class_grades(state["students"])
+        matched = filter_by_field(evaluation["rankings"], "nim", nim)
+        if matched:
+            s = matched[0]
+            print(
+                f"  -> {s['nama']} ({s['nim']}): Nilai Akhir = {s['nilai_akhir']:.2f} | "
+                f"Grade = {s['grade']} | Status = {s['status_lulus']} | Peringkat = #{s['rank']}"
+            )
+        _print_rankings(evaluation["rankings"])
+
     def show_rankings() -> bool:
         evaluation = evaluate_class_grades(state["students"])
         _print_rankings(evaluation["rankings"])
@@ -200,6 +222,7 @@ def run_cli() -> None:
                 state["students"], nim, nama, tugas, kuis, uts, uas
             )
             print("Data nilai mahasiswa berhasil ditambahkan.")
+            _print_student_feedback(nim.strip())
         except ValueError as err:
             print(f"Gagal: {err}")
         return True
@@ -207,14 +230,42 @@ def run_cli() -> None:
     def revise_action() -> bool:
         evaluation = evaluate_class_grades(state["students"])
         _print_rankings(evaluation["rankings"])
+        if not state["students"]:
+            return True
         nim = prompt_non_empty("NIM Mahasiswa yang ingin direvisi")
-        print("  Komponen: 1. Tugas  2. Kuis  3. UTS  4. UAS")
-        comp_idx = prompt_int("Pilih komponen", min_value=1, max_value=4)
-        comp_name = ["tugas", "kuis", "uts", "uas"][comp_idx - 1]
-        new_score = prompt_float(f"Nilai {comp_name.upper()} baru (0-100)", min_value=0.0, max_value=100.0)
+        if not filter_by_field(state["students"], "nim", nim):
+            print(f"Gagal: Mahasiswa dengan NIM '{nim}' tidak ditemukan.")
+            return True
+        print("  Komponen: 1. Tugas  2. Kuis  3. UTS  4. UAS  5. Semua Komponen")
+        comp_idx = prompt_int("Pilih komponen", min_value=1, max_value=5)
+        if comp_idx == 5:
+            updates = {
+                "tugas": prompt_float("Nilai Tugas baru (0-100)", min_value=0.0, max_value=100.0),
+                "kuis": prompt_float("Nilai Kuis baru (0-100)", min_value=0.0, max_value=100.0),
+                "uts": prompt_float("Nilai UTS baru (0-100)", min_value=0.0, max_value=100.0),
+                "uas": prompt_float("Nilai UAS baru (0-100)", min_value=0.0, max_value=100.0),
+            }
+        else:
+            comp_name = ["tugas", "kuis", "uts", "uas"][comp_idx - 1]
+            updates = {comp_name: prompt_float(f"Nilai {comp_name.upper()} baru (0-100)", min_value=0.0, max_value=100.0)}
         try:
-            state["students"] = revise_student_scores(state["students"], nim, {comp_name: new_score})
+            state["students"] = revise_student_scores(state["students"], nim, updates)
             print("Nilai berhasil direvisi.")
+            _print_student_feedback(nim)
+        except ValueError as err:
+            print(f"Gagal: {err}")
+        return True
+
+    def delete_student_action() -> bool:
+        evaluation = evaluate_class_grades(state["students"])
+        _print_rankings(evaluation["rankings"])
+        if not state["students"]:
+            return True
+        nim = prompt_non_empty("NIM Mahasiswa yang ingin dihapus")
+        try:
+            state["students"] = delete_student_scores(state["students"], nim)
+            print(f"Data mahasiswa '{nim}' berhasil dihapus.")
+            _print_rankings(evaluate_class_grades(state["students"])["rankings"])
         except ValueError as err:
             print(f"Gagal: {err}")
         return True
@@ -248,6 +299,7 @@ def run_cli() -> None:
             ("Lihat Peringkat Nilai Akhir & Statistik", show_rankings),
             ("Input Nilai Mahasiswa Baru", add_student_action),
             ("Revisi Komponen Nilai Mahasiswa", revise_action),
+            ("Hapus Data Nilai Mahasiswa", delete_student_action),
             ("Filter Kelulusan / Cari Mahasiswa", filter_and_search_action),
             ("Lihat Distribusi Huruf Mutu (Grade)", distribution_action),
         ],

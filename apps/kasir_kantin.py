@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps import format_idr, print_header, prompt_int, prompt_non_empty, run_menu_loop
+from apps import (
+    format_idr,
+    next_prefixed_id,
+    print_header,
+    prompt_float,
+    prompt_int,
+    prompt_non_empty,
+    run_menu_loop,
+)
 from fungsio_lib import (
     add_record,
     calculate_summary_stats,
@@ -30,6 +38,57 @@ INITIAL_MENU: list[dict[str, Any]] = [
 ]
 
 
+def add_menu_item(
+    menu: list[dict[str, Any]],
+    nama: str,
+    kategori: str,
+    harga: float,
+) -> list[dict[str, Any]]:
+    """Tambahkan item menu kantin baru secara immutable memakai add_record."""
+    if harga <= 0:
+        raise ValueError("Harga menu harus lebih dari 0")
+    clean_kategori = kategori.strip().title()
+    if clean_kategori not in {"Makanan", "Minuman"}:
+        raise ValueError("Kategori menu harus 'Makanan' atau 'Minuman'")
+
+    entry = {
+        "id_menu": next_prefixed_id(menu, "id_menu", "M"),
+        "nama": nama.strip(),
+        "kategori": clean_kategori,
+        "harga": int(round(harga)),
+    }
+    return add_record(menu, entry)
+
+
+def _resolve_cart_id(cart: list[dict[str, Any]], raw_identifier: str) -> str | None:
+    """Cocokkan input user ke ID menu di keranjang via ID, nomor baris struk, atau nama.
+
+    Menyelesaikan bug saat user memasukkan nomor urut baris (1, 2) atau huruf kecil
+    sehingga pembaruan qty dan penghapusan item selalu tepat sasaran.
+    """
+    cleaned = raw_identifier.strip()
+    if not cleaned:
+        return None
+
+    upper_id = cleaned.upper()
+    if filter_by_field(cart, "id_menu", upper_id):
+        return upper_id
+
+    # Cocokkan nomor urut baris sesuai tampilan struk terurut.
+    if cleaned.isdigit():
+        row_num = int(cleaned)
+        ordered_items = compute_checkout(cart)["items"]
+        if 1 <= row_num <= len(ordered_items):
+            return str(ordered_items[row_num - 1]["id_menu"])
+
+    # Cocokkan nama menu persis (case-insensitive).
+    lowered = cleaned.lower()
+    for item in cart:
+        if str(item["nama"]).lower() == lowered:
+            return str(item["id_menu"])
+    return None
+
+
 def add_to_cart(
     menu: list[dict[str, Any]],
     cart: list[dict[str, Any]],
@@ -40,17 +99,18 @@ def add_to_cart(
     if qty <= 0:
         raise ValueError("Jumlah (qty) harus lebih dari 0")
 
+    clean_id = id_menu.strip().upper()
     # Pakai filter_by_field untuk memastikan ID menu valid sebelum masuk keranjang.
-    matched_menu = filter_by_field(menu, "id_menu", id_menu)
+    matched_menu = filter_by_field(menu, "id_menu", clean_id)
     if not matched_menu:
         raise ValueError(f"Menu dengan ID '{id_menu}' tidak ditemukan")
 
     menu_item = matched_menu[0]
-    existing_cart_item = filter_by_field(cart, "id_menu", id_menu)
+    existing_cart_item = filter_by_field(cart, "id_menu", clean_id)
     # Jika item sudah ada di keranjang, perbarui qty via update_by_id agar tidak duplikat.
     if existing_cart_item:
         new_qty = int(existing_cart_item[0]["qty"]) + qty
-        return update_by_id(cart, "id_menu", id_menu, {"qty": new_qty})
+        return update_by_id(cart, "id_menu", clean_id, {"qty": new_qty})
 
     new_entry = {
         "id_menu": menu_item["id_menu"],
@@ -67,11 +127,21 @@ def update_cart_quantity(
     cart: list[dict[str, Any]],
     id_menu: str,
     new_qty: int,
+    mode: str = "set",
 ) -> list[dict[str, Any]]:
-    """Ubah qty item di keranjang, atau hapus otomatis via remove_by_id jika qty <= 0."""
-    if new_qty <= 0:
-        return remove_by_id(cart, "id_menu", id_menu)
-    return update_by_id(cart, "id_menu", id_menu, {"qty": new_qty})
+    """Ubah qty item keranjang (mode 'set' mengganti qty, mode 'add' menambah ke qty lama)."""
+    if mode not in {"set", "add"}:
+        raise ValueError("Mode pembaruan qty harus 'set' atau 'add'")
+
+    clean_id = id_menu.strip().upper()
+    existing = filter_by_field(cart, "id_menu", clean_id)
+    if not existing:
+        raise ValueError(f"Item '{id_menu}' tidak ditemukan di keranjang")
+
+    target_qty = int(existing[0]["qty"]) + new_qty if mode == "add" else new_qty
+    if target_qty <= 0:
+        return remove_by_id(cart, "id_menu", clean_id)
+    return update_by_id(cart, "id_menu", clean_id, {"qty": target_qty})
 
 
 def compute_checkout(cart: list[dict[str, Any]]) -> dict[str, Any]:
@@ -119,19 +189,19 @@ def _print_menu_table(menu: list[dict[str, Any]], title: str = "Daftar Menu Kant
 
 
 def _print_receipt(checkout: dict[str, Any]) -> None:
-    """Cetak struk rincian belanja, potongan diskon, PPN, dan grand total."""
-    print("\n[Struk Total Belanja]")
+    """Cetak struk rincian belanja termasuk ID menu, qty, potongan diskon, dan PPN."""
+    print("\n[Struk & Isi Keranjang Belanja]")
     if not checkout["items"]:
         print("  Keranjang masih kosong.")
         return
-    print(f"  {'No':<3} | {'Menu':<25} | {'Qty':>3} | {'Harga':>10} | {'Subtotal':>12}")
-    print("  " + "-" * 64)
+    print(f"  {'No':<3} | {'ID':<4} | {'Menu':<25} | {'Qty':>3} | {'Harga':>10} | {'Subtotal':>12}")
+    print("  " + "-" * 71)
     for item in checkout["items"]:
         print(
-            f"  {item['rank']:<3} | {item['nama']:<25} | {item['qty']:>3} | "
+            f"  {item['rank']:<3} | {item['id_menu']:<4} | {item['nama'][:25]:<25} | {item['qty']:>3} | "
             f"{format_idr(item['harga']):>10} | {format_idr(item['subtotal']):>12}"
         )
-    print("  " + "-" * 64)
+    print("  " + "-" * 71)
     print(f"  Total Item   : {checkout['total_qty']} pcs")
     print(f"  Total Kotor  : {format_idr(checkout['gross_total'])}")
     print(f"  Diskon (10%) : -{format_idr(checkout['discount'])}")
@@ -166,7 +236,7 @@ def run_demo() -> dict[str, Any]:
     cart = add_to_cart(menu, cart, "M03", 1)
     cart = add_to_cart(menu, cart, "M04", 3)
     cart = add_to_cart(menu, cart, "M06", 1)
-    cart = update_cart_quantity(cart, "M04", 2)
+    cart = update_cart_quantity(cart, "M04", 2, mode="set")
     cart = remove_by_id(cart, "id_menu", "M06")
 
     checkout = compute_checkout(cart)
@@ -186,6 +256,17 @@ def run_cli() -> None:
         "cart": [],
     }
 
+    def _print_item_qty_feedback(id_menu: str) -> None:
+        updated = filter_by_field(state["cart"], "id_menu", id_menu)
+        if updated:
+            item = updated[0]
+            subtotal = float(item["harga"]) * int(item["qty"])
+            print(
+                f"  -> Item '{item['nama']}' (ID: {item['id_menu']}) "
+                f"Qty sekarang: {item['qty']} pcs (Subtotal: {format_idr(subtotal)})"
+            )
+        _print_receipt(compute_checkout(state["cart"]))
+
     def show_menu() -> bool:
         sorted_menu = sort_records(state["menu"], "harga", descending=False)
         _print_menu_table(sorted_menu)
@@ -200,7 +281,7 @@ def run_cli() -> None:
         print("  1. Filter Kategori  2. Cari Nama Menu")
         mode = prompt_int("Pilih mode", min_value=1, max_value=2)
         if mode == 1:
-            kategori = prompt_non_empty("Masukkan kategori (Makanan/Minuman)")
+            kategori = prompt_non_empty("Masukkan kategori (Makanan/Minuman)").title()
             results = filter_by_field(state["menu"], "kategori", kategori)
             _print_menu_table(results, f"Kategori '{kategori}'")
         else:
@@ -216,6 +297,7 @@ def run_cli() -> None:
         try:
             state["cart"] = add_to_cart(state["menu"], state["cart"], id_menu, qty)
             print("Item berhasil ditambahkan ke keranjang.")
+            _print_item_qty_feedback(id_menu)
         except ValueError as err:
             print(f"Gagal: {err}")
         return True
@@ -223,24 +305,71 @@ def run_cli() -> None:
     def edit_cart_item() -> bool:
         _print_receipt(compute_checkout(state["cart"]))
         if not state["cart"]:
+            print("  Gunakan menu 3 untuk menambah item ke keranjang terlebih dahulu.")
             return True
-        id_menu = prompt_non_empty("Masukkan ID Menu di keranjang").upper()
-        qty = prompt_int("Masukkan qty baru (0 untuk hapus)", min_value=0)
-        state["cart"] = update_cart_quantity(state["cart"], id_menu, qty)
-        print("Keranjang diperbarui.")
+
+        raw_target = prompt_non_empty("Masukkan ID Menu atau Nomor Baris (misal M01 atau 1)")
+        resolved_id = _resolve_cart_id(state["cart"], raw_target)
+        if not resolved_id:
+            # Jika user mengetik ID menu yang ada di katalog tapi belum masuk keranjang, tawarkan tambah langsung.
+            candidate_id = raw_target.strip().upper()
+            in_menu = filter_by_field(state["menu"], "id_menu", candidate_id)
+            if in_menu:
+                print(f"  Menu '{in_menu[0]['nama']}' ({candidate_id}) belum ada di keranjang.")
+                add_qty = prompt_int("Masukkan jumlah untuk ditambahkan (0 untuk batal)", min_value=0)
+                if add_qty > 0:
+                    state["cart"] = add_to_cart(state["menu"], state["cart"], candidate_id, add_qty)
+                    print("Item berhasil ditambahkan ke keranjang.")
+                    _print_item_qty_feedback(candidate_id)
+                return True
+            print(f"Gagal: Item '{raw_target}' tidak ditemukan di keranjang.")
+            return True
+
+        current_item = filter_by_field(state["cart"], "id_menu", resolved_id)[0]
+        print(
+            f"  Dipilih: {current_item['nama']} (ID: {resolved_id}, Qty saat ini: {current_item['qty']} pcs)"
+        )
+        print("  1. Tambah Qty (+jumlah)  2. Ubah ke Qty Baru (set nilai baru)")
+        mode_choice = prompt_int("Pilih aksi", min_value=1, max_value=2)
+        if mode_choice == 1:
+            delta_qty = prompt_int("Masukkan jumlah tambahan (+qty)", min_value=1)
+            state["cart"] = update_cart_quantity(state["cart"], resolved_id, delta_qty, mode="add")
+        else:
+            new_qty = prompt_int("Masukkan qty baru (0 untuk hapus)", min_value=0)
+            state["cart"] = update_cart_quantity(state["cart"], resolved_id, new_qty, mode="set")
+
+        print("Keranjang berhasil diperbarui.")
+        _print_item_qty_feedback(resolved_id)
         return True
 
     def delete_cart_item() -> bool:
         _print_receipt(compute_checkout(state["cart"]))
         if not state["cart"]:
             return True
-        id_menu = prompt_non_empty("Masukkan ID Menu yang ingin dihapus").upper()
-        state["cart"] = remove_by_id(state["cart"], "id_menu", id_menu)
-        print("Item dihapus jika ada di keranjang.")
+        raw_target = prompt_non_empty("Masukkan ID Menu atau Nomor Baris yang ingin dihapus")
+        resolved_id = _resolve_cart_id(state["cart"], raw_target)
+        if not resolved_id:
+            print(f"Gagal: Item '{raw_target}' tidak ditemukan di keranjang.")
+            return True
+        state["cart"] = remove_by_id(state["cart"], "id_menu", resolved_id)
+        print(f"Item '{resolved_id}' dihapus dari keranjang.")
+        _print_receipt(compute_checkout(state["cart"]))
         return True
 
     def checkout_action() -> bool:
         _print_receipt(compute_checkout(state["cart"]))
+        return True
+
+    def add_menu_action() -> bool:
+        nama = prompt_non_empty("Nama menu baru")
+        kategori = prompt_non_empty("Kategori (Makanan/Minuman)")
+        harga = prompt_float("Harga (Rp)", min_value=500.0)
+        try:
+            state["menu"] = add_menu_item(state["menu"], nama, kategori, harga)
+            print("Menu baru berhasil ditambahkan ke katalog kantin.")
+            _print_menu_table(state["menu"])
+        except ValueError as err:
+            print(f"Gagal: {err}")
         return True
 
     run_menu_loop(
@@ -249,8 +378,9 @@ def run_cli() -> None:
             ("Lihat Semua Menu & Statistik Harga", show_menu),
             ("Filter Kategori / Cari Menu", filter_and_search),
             ("Tambah Item ke Keranjang", add_cart_item),
-            ("Ubah Jumlah Item Keranjang", edit_cart_item),
+            ("Ubah / Tambah Jumlah Item Keranjang", edit_cart_item),
             ("Hapus Item dari Keranjang", delete_cart_item),
             ("Lihat Keranjang & Total Belanja", checkout_action),
+            ("Tambah Menu Kantin Baru", add_menu_action),
         ],
     )
